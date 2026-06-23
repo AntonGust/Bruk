@@ -1,0 +1,75 @@
+# Sprint 1 / Day 4 — vLLM-in-Kata serving spike (Checkpoint 4)
+#
+# Serves an OpenAI-compatible endpoint from inside a Kata microVM with a whole
+# RTX PRO 6000 Blackwell passed through via VFIO (Checkpoint 3 is the prerequisite).
+#
+# Image pin rationale:
+#   vllm/vllm-openai:v0.11.1  is the same vLLM version NVIDIA's CUDA-13.1.0 release
+#   (NGC vLLM 25.12) bundles — it matches the box's in-guest CUDA 13.1 (driver 590.48.01)
+#   confirmed at Checkpoint 3. Public on Docker Hub, no NGC pull secret needed.
+#   If this build does not engage sm_120 (Blackwell), swap to the NVIDIA-optimized image
+#   nvcr.io/nvidia/vllm:25.12 (CUDA 13.1.0.36, RTX PRO 6000 functional support) — that
+#   requires an NGC imagePullSecret. Do NOT use :latest — float = divergent bugs.
+#
+# Prereqs:
+#   kubectl create secret generic hf-token --from-literal=token=$HF_TOKEN   # model is gated
+#
+apiVersion: v1
+kind: Pod
+metadata:
+  name: vllm
+  labels: { app: vllm }
+spec:
+  runtimeClassName: kata-qemu-nvidia-gpu
+  restartPolicy: Never
+  containers:
+    - name: vllm
+      image: vllm/vllm-openai:v0.11.1
+      args:
+        - "--model=mistralai/Mistral-Small-3.1-24B-Instruct-2503"
+        - "--served-model-name=mistral-small-3.1"   # short name for the curl below
+        - "--quantization=fp8"
+        # ~96 GB VRAM leaves huge KV-cache headroom for a 24B FP8 model (~24 GB weights).
+        # 32768 is a generous, predictable default; Mistral-Small-3.1 supports up to 128k.
+        - "--max-model-len=32768"
+        - "--gpu-memory-utilization=0.90"
+        - "--host=0.0.0.0"
+        - "--port=8000"
+      ports: [{ containerPort: 8000 }]
+      env:
+        - name: HF_TOKEN
+          valueFrom: { secretKeyRef: { name: hf-token, key: token } }
+        # Deliberate backend choice for dense FP8 on sm_120 (RTX PRO 6000) — see
+        # docs/adr/0003-sm120-attention-backend.md. FLASH_ATTN keeps CUDA graphs +
+        # paged attention here (verified); FlashInfer offers no win on sm_120 for a
+        # dense model. This is an env var, not a serve CLI flag.
+        - name: VLLM_ATTENTION_BACKEND
+          value: "FLASH_ATTN"
+      resources:
+        limits:
+          nvidia.com/pgpu: 1
+          # Kata sizes the microVM from these limits. The Kata default (8Gi) is too
+          # tight for a 24B load; give the guest room for the model load + CUDA context.
+          memory: 32Gi
+          cpu: "8"
+        requests:
+          memory: 32Gi
+          cpu: "4"
+      volumeMounts:
+        # vLLM needs a sizeable /dev/shm; the Kata default is small.
+        - { name: dshm, mountPath: /dev/shm }
+      readinessProbe:
+        httpGet: { path: /health, port: 8000 }
+        initialDelaySeconds: 60
+        periodSeconds: 10
+        failureThreshold: 90          # first pull + weight load is slow (~minutes)
+  volumes:
+    - name: dshm
+      emptyDir: { medium: Memory, sizeLimit: 8Gi }
+---
+apiVersion: v1
+kind: Service
+metadata: { name: vllm-svc }
+spec:
+  selector: { app: vllm }
+  ports: [{ port: 8000, targetPort: 8000 }]

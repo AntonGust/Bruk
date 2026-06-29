@@ -1,0 +1,122 @@
+# As-built state — secure-puppy (4x RTX PRO 6000 Blackwell SE, sm_120)
+# Captured before decommission / H100 migration
+## Host
+secure-puppy
+6.17.0-35-generic
+07:47:56 up 6 days, 16:52,  1 user,  load average: 0.35, 0.35, 0.27
+
+## /proc/cmdline (note: clean — SEV-SNP comes from BIOS/CBS, not kernel params)
+BOOT_IMAGE=/boot/vmlinuz-6.17.0-35-generic root=UUID=5766b0f3-8c57-43fc-8ec0-5c55dba95660 ro
+
+## k3s
+k3s version v1.35.5+k3s1 (6a4781ad)
+go version go1.25.9
+NAME           STATUS   ROLES                AGE   VERSION        INTERNAL-IP    EXTERNAL-IP   OS-IMAGE             KERNEL-VERSION      CONTAINER-RUNTIME
+secure-puppy   Ready    control-plane,etcd   10d   v1.35.5+k3s1   77.87.121.27   <none>        Ubuntu 24.04.4 LTS   6.17.0-35-generic   containerd://2.2.3-k3s1
+
+## RuntimeClasses
+NAME                            HANDLER                         AGE
+crun                            crun                            10d
+kata-clh                        kata-clh                        10d
+kata-cloud-hypervisor           kata-cloud-hypervisor           10d
+kata-dragonball                 kata-dragonball                 10d
+kata-fc                         kata-fc                         10d
+kata-qemu                       kata-qemu                       10d
+kata-qemu-coco-dev              kata-qemu-coco-dev              10d
+kata-qemu-coco-dev-runtime-rs   kata-qemu-coco-dev-runtime-rs   10d
+kata-qemu-nvidia-gpu            kata-qemu-nvidia-gpu            10d
+kata-qemu-nvidia-gpu-snp        kata-qemu-nvidia-gpu-snp        10d
+kata-qemu-nvidia-gpu-tdx        kata-qemu-nvidia-gpu-tdx        10d
+kata-qemu-runtime-rs            kata-qemu-runtime-rs            10d
+kata-qemu-se                    kata-qemu-se                    10d
+kata-qemu-se-runtime-rs         kata-qemu-se-runtime-rs         10d
+kata-qemu-snp                   kata-qemu-snp                   10d
+kata-qemu-snp-runtime-rs        kata-qemu-snp-runtime-rs        10d
+kata-qemu-tdx                   kata-qemu-tdx                   10d
+kata-qemu-tdx-runtime-rs        kata-qemu-tdx-runtime-rs        10d
+lunatic                         lunatic                         10d
+nvidia                          nvidia                          10d
+nvidia-cdi                      nvidia-cdi                      10d
+nvidia-experimental             nvidia-experimental             10d
+nvidia-legacy                   nvidia-legacy                   10d
+slight                          slight                          10d
+spin                            spin                            10d
+wasmedge                        wasmedge                        10d
+wasmer                          wasmer                          10d
+wasmtime                        wasmtime                        10d
+wws                             wws                             10d
+
+## Stack image versions (the reproducibility recipe)
+  nvcr.io/nvidia/cloud-native/k8s-cc-manager:v0.4.0
+  nvcr.io/nvidia/cloud-native/k8s-driver-manager:v0.11.0
+  nvcr.io/nvidia/cloud-native/nvidia-sandbox-device-plugin:v0.0.3
+  nvcr.io/nvidia/gpu-operator:v26.3.2
+  quay.io/cilium/cilium-envoy:v1.36.8-1781157951-a7f42a3390781539911b5b9107881b35ecc4e752@sha256:326f872e19ce8aa45170efbf583b3f301586ba3feead14b864676d4baf3b45ed
+  quay.io/cilium/cilium:v1.19.5@sha256:20fbbc14ac20b55a292c0dcda5571bf31cde30a7dbc68c29db3e709390ab0732
+  quay.io/cilium/operator-generic:v1.19.5@sha256:be848a365776e07d0c5a895eda7aec928ddc52a5a1fa2f432fd7a286609e1db4
+  quay.io/kata-containers/kata-deploy:3.29.0
+  vllm/vllm-openai:v0.11.1
+default/vllm-7c88465cbb-q5kls
+gpu-operator/gpu-operator-fdfdb94d4-8x6hk
+gpu-operator/gpu-operator-node-feature-discovery-gc-585b876f9c-52kl2
+gpu-operator/gpu-operator-node-feature-discovery-master-7f6684fb45-q9cxj
+gpu-operator/gpu-operator-node-feature-discovery-worker-k9hlm
+gpu-operator/nvidia-cc-manager-67cm4
+gpu-operator/nvidia-kata-sandbox-device-plugin-daemonset-9psr4
+gpu-operator/nvidia-sandbox-validator-njxgf
+gpu-operator/nvidia-vfio-manager-dctp6
+kata-system/kata-deploy-66cr2
+kube-system/cilium-42bwl
+kube-system/cilium-envoy-t7h6p
+kube-system/cilium-operator-757698d7-tfltv
+
+## GPU / VFIO binding (host)
+01:00.0 3D controller [0302]: NVIDIA Corporation Device [10de:2bb5] (rev a1)
+	Subsystem: NVIDIA Corporation Device [10de:204e]
+	Kernel driver in use: vfio-pci
+	Kernel modules: nvidiafb, nouveau
+41:00.0 3D controller [0302]: NVIDIA Corporation Device [10de:2bb5] (rev a1)
+	Subsystem: NVIDIA Corporation Device [10de:204e]
+	Kernel driver in use: vfio-pci
+	Kernel modules: nvidiafb, nouveau
+81:00.0 3D controller [0302]: NVIDIA Corporation Device [10de:2bb5] (rev a1)
+	Subsystem: NVIDIA Corporation Device [10de:204e]
+	Kernel driver in use: vfio-pci
+	Kernel modules: nvidiafb, nouveau
+c2:00.0 3D controller [0302]: NVIDIA Corporation Device [10de:2bb5] (rev a1)
+	Subsystem: NVIDIA Corporation Device [10de:204e]
+	Kernel driver in use: vfio-pci
+	Kernel modules: nvidiafb, nouveau
+
+## SEV-SNP / IOMMU (dmesg)
+[    0.000000] SEV-SNP: RMP table physical range [0x0000000035500000 - 0x0000000075afffff]
+[    0.022264] SEV-SNP: Reserving start/end of RMP table on a 2MB boundary [0x0000000035400000]
+[    0.022267] SEV-SNP: Reserving start/end of RMP table on a 2MB boundary [0x0000000075a00000]
+[    0.872419] AMD-Vi: IOMMU SNP support enabled.
+[    0.879513] AMD-Vi: Extended features (0xa5bf7320a2294aee, 0x1d): PPR X2APIC NX [5] IA GA PC GA_vAPIC SNP
+[    0.880107] AMD-Vi: Force to disable Virtual APIC due to SNP
+[    6.318716] ccp 0000:03:00.5: sev enabled
+[    6.318719] ccp 0000:03:00.5: psp: TSME enabled
+[    6.318721] ccp 0000:03:00.5: psp enabled
+[    6.526676] kvm_amd: TSC scaling supported
+[    6.526680] kvm_amd: Nested Virtualization enabled
+[    6.526681] kvm_amd: Nested Paging enabled
+[    6.526683] kvm_amd: LBR virtualization supported
+[    8.672148] ccp 0000:03:00.5: SEV-SNP API:1.58 build:2
+[    8.734758] ccp 0000:03:00.5: SEV API:1.58 build:2
+[    8.735872] kvm_amd: SEV enabled (ASIDs 100 - 1006)
+[    8.735878] kvm_amd: SEV-ES enabled (ASIDs 1 - 99)
+[    8.735882] kvm_amd: SEV-SNP enabled (ASIDs 1 - 99)
+[    8.735931] kvm_amd: Virtual VMLOAD VMSAVE supported
+[    8.735934] kvm_amd: Virtual GIF supported
+
+## Kata active confidential-GPU config — key non-default values
+(full file: kata-configuration-qemu-nvidia-gpu.toml)
+29:kernel = "/opt/kata/share/kata-containers/vmlinuz-nvidia-gpu.container"
+30:image = "/opt/kata/share/kata-containers/kata-containers-nvidia-gpu.img"
+31:machine_type = "q35"
+70:kernel_verity_params = "root_hash=72c5cdc1d09d2c837a0aeaee5c3d9ab3381c64ebd49759e8d69359df57a2eddd,salt=5cafd7d20818947758b7d4ba17282a9c038dcb17d3d6be615faac43c87a42bb9,data_blocks=291072,data_block_size=4096,hash_block_size=4096"
+410:hot_plug_vfio = "no-port"
+417:cold_plug_vfio = "root-port"
+423:pcie_root_port = 8
+723:vfio_mode = "guest-kernel"

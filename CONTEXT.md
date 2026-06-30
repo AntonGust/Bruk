@@ -37,8 +37,8 @@ The client-facing API surface (`/v1/chat/completions` etc.). **Envoy owns this c
 _Avoid_: the API, the endpoint (when precision is needed)
 
 **Attestation gate**:
-The rule and its enforcing artifact: a node receives no secrets (keys, weights, credentials) until it passes remote attestation. Lands in parallel with the serving skeleton.
-_Avoid_: preflight (the preflight script is one input to the gate, not the gate itself)
+The rule and its enforcing artifact: a node receives no secrets (keys, weights, credentials) until it passes **host attestation**. Lands in parallel with the serving skeleton.
+_Avoid_: preflight (the preflight script is one input to the gate, not the gate itself); do **not** conflate with **guest attestation** (see Confidential compute) — the gate is about the *node's* trustworthiness, not a workload's.
 
 ### Model library
 
@@ -55,3 +55,17 @@ _Avoid_: weights blob, checkpoint (when referring to the distributable artifact)
 **Airon Operator**:
 A **deterministic Kubernetes operator** (Go + controller-runtime, CRD-driven reconcilers) that manages Bruk's control-plane services. Explicitly **not** an LLM/agentic-AI actor — every change flows through Git/Flux and is auditable. Reconciles CRDs (e.g. `BrukModel`, `BrukTenant`, `InferenceService`) into the vLLM/Dynamo/Envoy stack.
 _Avoid_: **agent** (collides with SPIFFE workload + LLM agent), AI operator, controller (generic). Any LLM assistance is read-only/advisory and may only propose a Git PR a human approves — never act on the cluster.
+
+### Confidential compute
+
+**Confidential serving**:
+Running the inference workload inside a hardware **TEE** so weights and prompts are protected *in use*: a **SEV-SNP** confidential guest (CPU-side memory encryption) with the GPU in **CC-mode**. Distinct from the (non-confidential) serving skeleton, which uses plain Kata+VFIO.
+_Avoid_: secure serving, encrypted inference
+
+**Guest attestation**:
+Proof of *what a workload is* — the SEV-SNP guest measurement signed by the **AMD-PSP**, plus the GPU **device attestation report** (verified via nvtrust / a local verifier). Does **not** require a host TPM. Contrast with **host attestation** (the attestation gate), which proves the *node's boot chain* and does require the TPM.
+_Avoid_: remote attestation (ambiguous — say which one)
+
+**SPT mode**:
+**Single-GPU PassThrough** confidential-compute mode — exactly one GPU bound to one confidential guest. The only CC topology *validated* on the RTX PRO 6000 Blackwell SE; multi-GPU-in-one-TEE is a later (B200/B300-class) capability.
+_Avoid_: passthrough (collides with plain VFIO passthrough)

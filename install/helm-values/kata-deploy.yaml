@@ -1,0 +1,10 @@
+# kata-deploy (chart 3.29.0) — installs /opt/kata + the kata runtimeclasses (incl.
+# kata-qemu-nvidia-gpu, -snp) and a containerd-v2 drop-in. Applied by install/bootstrap.sh:
+#   helm install kata-deploy oci://ghcr.io/kata-containers/kata-deploy-charts/kata-deploy \
+#     -n kata-system -f this --wait --timeout 10m
+#
+# k8sDistribution=k3s is essential — it writes to k3s's config-v3.toml.d drop-in and restarts k3s,
+# not the standard /etc/containerd path.
+k8sDistribution: k3s
+nfd:
+  enabled: false

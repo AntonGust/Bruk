@@ -1,0 +1,106 @@
+# Bruk single-node vLLM serving — H100 NVL (ported from day4-vllm.yaml; see docs/adr/0005-h100-pilot-hardware.md)
+#
+# Serves an OpenAI-compatible endpoint from inside a Kata microVM with a whole
+# H100 NVL (94 GB, sm_90 / Hopper) passed through via VFIO.
+# Prereq: GPUs bound to vfio-pci + nvidia.com/pgpu advertised by the GPU Operator
+# (host VFIO/Kata bring-up — see the H100 migration docs).
+#
+# Ported from the RTX PRO 6000 (sm_120) manifest — what changed for H100 (ADR-0005):
+#   - VRAM 96 GB -> 94 GB (H100 NVL); --gpu-memory-utilization=0.90 re-confirmed (ample KV headroom)
+#   - attention backend: ADR-0003's sm_120 rationale is VOID on sm_90 — FLASH_ATTN now resolves to
+#     FlashAttention-3 (native/recommended); FlashInfer & TRT-LLM are real options (see env note)
+#   - GPU count 4 -> 2 (one whole GPU per worker; the box supports up to 2 concurrent workers)
+#   - dual-socket box: for best perf, NUMA-pin each guest to its GPU's socket (21:00.0 vs 81:00.0)
+#     — a Kata/topology concern, not a field here; tune only if a benchmark warrants.
+#
+# Image pin: vllm/vllm-openai:v0.11.1 (proven; public on Docker Hub, no NGC pull secret). The
+#   in-guest NVIDIA driver comes from kata-deploy 3.29.0's GPU guest image (driver 590.48.01),
+#   which supports the CUDA runtime vLLM 0.11.1 bundles. Do NOT use :latest — float = divergent bugs.
+#
+# Confidential serving (later — ADR-0004): switch runtimeClassName to kata-qemu-nvidia-gpu-snp.
+#
+# Prereq secret (token kept out of any file — see docs/handoffs/handoff-2026-06-23.md):
+#   kubectl create secret generic hf-token --from-literal=token=$HF_TOKEN   # model is gated
+#
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: vllm-models
+spec:
+  accessModes: ["ReadWriteOnce"]
+  storageClassName: local-path          # k3s default; node-local NVMe (~3.3 TB free)
+  resources:
+    requests:
+      storage: 120Gi                    # ~90 GB pull for this repo (both weight formats) + headroom
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: vllm
+  labels: { app: vllm }
+spec:
+  replicas: 1
+  strategy: { type: Recreate }          # RWO PVC + single GPU: never run two pods at once
+  selector:
+    matchLabels: { app: vllm }
+  template:
+    metadata:
+      labels: { app: vllm }
+    spec:
+      runtimeClassName: kata-qemu-nvidia-gpu   # non-CC baseline; switch to -snp for confidential (ADR-0004)
+      containers:
+        - name: vllm
+          image: vllm/vllm-openai:v0.11.1
+          args:
+            - "--model=mistralai/Mistral-Small-3.1-24B-Instruct-2503"
+            - "--served-model-name=mistral-small-3.1"
+            - "--quantization=fp8"
+            # H100 NVL = 94 GB VRAM. A 24B FP8 model (~24 GB weights) at 0.90 utilization
+            # (~85 GB) leaves ~60 GB for KV cache — ample. 32768 is a generous, predictable
+            # default; Mistral-Small-3.1 supports up to 128k.
+            - "--max-model-len=32768"
+            - "--gpu-memory-utilization=0.90"
+            - "--host=0.0.0.0"
+            - "--port=8000"
+          ports: [{ containerPort: 8000 }]
+          env:
+            - name: HF_TOKEN
+              valueFrom: { secretKeyRef: { name: hf-token, key: token } }
+            # Attention backend on H100 (sm_90): FLASH_ATTN resolves to FlashAttention-3 (native,
+            # recommended). This is NOT the sm_120 workaround ADR-0003 described — that rationale is
+            # void on Hopper (ADR-0005 supersedes ADR-0003 for H100). FlashInfer / TRT-LLM are now
+            # real options; revisit if a benchmark warrants. Env var, not a serve CLI flag.
+            - name: VLLM_ATTENTION_BACKEND
+              value: "FLASH_ATTN"
+          resources:
+            limits:
+              nvidia.com/pgpu: 1
+              # Kata sizes the microVM from these limits. The Kata default (8Gi) is too
+              # tight for a 24B load; give the guest room for the model load + CUDA context.
+              memory: 32Gi
+              cpu: "8"
+            requests:
+              memory: 32Gi
+              cpu: "4"
+          volumeMounts:
+            # Persist the HF weight cache so a restart reuses ~90 GB instead of re-downloading.
+            - { name: models, mountPath: /root/.cache/huggingface }
+            # vLLM needs a sizeable /dev/shm; the Kata default is small.
+            - { name: dshm, mountPath: /dev/shm }
+          readinessProbe:
+            httpGet: { path: /health, port: 8000 }
+            initialDelaySeconds: 60
+            periodSeconds: 10
+            failureThreshold: 90          # first pull + weight load is slow (~minutes)
+      volumes:
+        - name: models
+          persistentVolumeClaim: { claimName: vllm-models }
+        - name: dshm
+          emptyDir: { medium: Memory, sizeLimit: 8Gi }
+---
+apiVersion: v1
+kind: Service
+metadata: { name: vllm-svc }
+spec:
+  selector: { app: vllm }
+  ports: [{ port: 8000, targetPort: 8000 }]

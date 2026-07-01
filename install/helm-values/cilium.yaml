@@ -1,0 +1,4 @@
+# Cilium CNI (chart 1.19.5) — single-node reference cluster.
+# Applied by install/bootstrap.sh: helm install cilium cilium/cilium -n kube-system -f this
+operator:
+  replicas: 1

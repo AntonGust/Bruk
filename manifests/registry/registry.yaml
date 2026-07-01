@@ -1,0 +1,72 @@
+# Local container registry — mirror for CoCo confidential guest-pull (ADR-0006 Part 1).
+#
+# Why: the SEV-SNP confidential guest's in-guest image-rs can't reliably reach docker.io
+# (`error sending request for url https://index.docker.io/...`) while the host and normal pods can.
+# A local registry the guest pulls from over the cluster network removes that dependency.
+# See docs/adr/0006-confidential-weights-delivery-storage.md and the plan.
+#
+# Exposure: ClusterIP ONLY — no hostNetwork, so nothing is exposed on the public node IP
+# (77.87.121.15). A registry:2 on hostNetwork would listen on all interfaces = unauth'd public
+# registry; we deliberately avoid that. If the confidential guest turns out unable to reach a
+# ClusterIP (validated in the plan's Step 3.5), the documented fallback is a hostNetwork pod bound
+# to REGISTRY_HTTP_ADDR=10.0.0.216:5000 (internal cilium_host only) + an nftables drop on ens5f0:5000.
+#
+# Integrity: this registry is plain HTTP (insecure). That's acceptable ONLY because the workload
+# pulls the image BY DIGEST (image-rs verifies content against sha256:<D> regardless of the mirror),
+# not because the transport is trusted. Never rely on this mirror for integrity — the digest does that.
+#
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: registry-data
+  namespace: default
+spec:
+  accessModes: ["ReadWriteOnce"]
+  storageClassName: local-path          # k3s default; node-local NVMe (~3.2 TB free)
+  resources:
+    requests:
+      storage: 200Gi                    # room for the ~13 GiB vLLM image + headroom
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: registry
+  namespace: default
+  labels: { app: registry }
+spec:
+  replicas: 1
+  strategy: { type: Recreate }          # RWO PVC → never two pods writing at once
+  selector:
+    matchLabels: { app: registry }
+  template:
+    metadata:
+      labels: { app: registry }
+    spec:
+      # default runtime (normal runc/containerd) — registry:2 is host-pulled (host reaches docker.io).
+      # Schedules fine on the all-CC node (no GPU, not gated by cc.ready.state).
+      containers:
+        - name: registry
+          image: registry:2
+          env:
+            - { name: REGISTRY_HTTP_ADDR, value: "0.0.0.0:5000" }   # in-pod bind; exposure is gated by the ClusterIP Service, not hostNetwork
+            - { name: REGISTRY_STORAGE_FILESYSTEM_ROOTDIRECTORY, value: "/var/lib/registry" }
+          ports: [{ containerPort: 5000 }]
+          volumeMounts:
+            - { name: data, mountPath: /var/lib/registry }
+          readinessProbe:
+            httpGet: { path: /v2/, port: 5000 }
+            initialDelaySeconds: 5
+            periodSeconds: 10
+      volumes:
+        - name: data
+          persistentVolumeClaim: { claimName: registry-data }
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: registry
+  namespace: default
+spec:
+  type: ClusterIP                        # zero host exposure; reachable in-cluster at registry.default.svc:5000
+  selector: { app: registry }
+  ports: [{ port: 5000, targetPort: 5000 }]

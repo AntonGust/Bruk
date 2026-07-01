@@ -1,0 +1,83 @@
+# Confidential-serving variant of h100-vllm.yaml — ADR-0004 step 3.
+#
+# Same workload (Mistral-Small-3.1-24B FP8), but runs inside a SEV-SNP confidential
+# guest (kata-qemu-nvidia-gpu-snp) against a GPU that's been flipped into CC SPT
+# mode (see docs/h100-bringup-status.md — GPU 81:00.0, via NVIDIA/gpu-admin-tools'
+# nvidia_gpu_tools.py --set-cc-mode=on, done surgically so the non-CC deployment
+# on GPU 21:00.0 (manifests/h100-vllm.yaml) is undisturbed).
+#
+# Deployed alongside (not replacing) the non-CC deployment — the box has 2 H100s,
+# ADR-0005 confirms up to 2 concurrent confidential/non-CC guests is supported.
+# Reuses the same `vllm-models` PVC (RWO = single-node, not single-pod; both pods
+# are on the same single-node cluster) to skip re-downloading the ~90GB weights.
+#
+# Prereq secret: same `hf-token` used by h100-vllm.yaml.
+#
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: vllm-cc
+  labels: { app: vllm-cc }
+spec:
+  replicas: 1
+  strategy: { type: Recreate }
+  selector:
+    matchLabels: { app: vllm-cc }
+  template:
+    metadata:
+      labels: { app: vllm-cc }
+    spec:
+      runtimeClassName: kata-qemu-nvidia-gpu-snp   # confidential guest (ADR-0004)
+      containers:
+        - name: vllm
+          image: vllm/vllm-openai:v0.11.1
+          args:
+            - "--model=mistralai/Mistral-Small-3.1-24B-Instruct-2503"
+            - "--served-model-name=mistral-small-3.1"
+            - "--quantization=fp8"
+            - "--max-model-len=32768"
+            - "--gpu-memory-utilization=0.90"
+            - "--host=0.0.0.0"
+            - "--port=8000"
+          ports: [{ containerPort: 8000 }]
+          env:
+            - name: HF_TOKEN
+              valueFrom: { secretKeyRef: { name: hf-token, key: token } }
+            - name: VLLM_ATTENTION_BACKEND
+              value: "FLASH_ATTN"
+          resources:
+            limits:
+              nvidia.com/pgpu: 1
+              # Confidential guest sizing is LARGER than the non-CC path (h100-vllm.yaml uses 32Gi):
+              # CC containers are "guest-pulled" — the ~13GiB (compressed, ~20-25GB unpacked) vLLM image
+              # is unpacked INSIDE the encrypted guest's RAM-backed tmpfs (default ceiling ~50% of guest
+              # RAM), NOT on host disk + virtiofs-shared like non-CC. 32Gi guest → ~20GB tmpfs → the
+              # image doesn't fit → "No space left on device" at container start. 96Gi → ~104GB guest
+              # (+8GB kata base) → ~52GB tmpfs ceiling, comfortably holds the unpacked image + runtime.
+              # Host has ~400GB free and only one CC pod runs, so this is safe. Model WEIGHTS are NOT
+              # counted here — they load into GPU VRAM from the virtiofs-mounted PVC, not guest RAM.
+              memory: 96Gi
+              cpu: "8"
+            requests:
+              memory: 48Gi
+              cpu: "4"
+          volumeMounts:
+            - { name: models, mountPath: /root/.cache/huggingface }
+            - { name: dshm, mountPath: /dev/shm }
+          readinessProbe:
+            httpGet: { path: /health, port: 8000 }
+            initialDelaySeconds: 60
+            periodSeconds: 10
+            failureThreshold: 90
+      volumes:
+        - name: models
+          persistentVolumeClaim: { claimName: vllm-models }
+        - name: dshm
+          emptyDir: { medium: Memory, sizeLimit: 8Gi }
+---
+apiVersion: v1
+kind: Service
+metadata: { name: vllm-cc-svc }
+spec:
+  selector: { app: vllm-cc }
+  ports: [{ port: 8000, targetPort: 8000 }]

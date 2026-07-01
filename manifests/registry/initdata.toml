@@ -1,0 +1,49 @@
+# Kata initdata — redirects the in-guest image-rs (inside confidential-data-hub) to the local mirror,
+# so CoCo guest-pull uses it instead of docker.io (ADR-0006 Part 1, plan Step 4).
+#
+# This is the SOURCE OF TRUTH. build-initdata.sh gzips+base64-encodes it into the pod annotation
+#   io.katacontainers.config.hypervisor.cc_init_data
+# (Kata expects base64(GZIP(toml)); no hand-maintained blob.)
+#
+# MECHANISM (verified against guest-components @ de3f6ff, the commit kata 3.29.0 pins):
+#   - kata-agent recognizes ONLY three initdata [data] keys: aa.toml, cdh.toml, policy.rego. Anything
+#     else (e.g. a standalone "registries.conf") is SILENTLY DROPPED — that was the earlier bug.
+#   - image-rs gets registry mirror/insecure config ONLY from cdh.toml's [image.registry_config]
+#     (or a registry_configuration_uri). It never reads /etc/containers/registries.conf.
+#   - Mirror mapping = [[image.registry_config.registry.mirror]].location; plain-HTTP = insecure=true.
+#     image-rs tries mirror(s) FIRST, then the original — so a working mirror never falls to docker.io.
+#
+# We provide ONLY cdh.toml (aa.toml/policy.rego keep guest defaults). [kbc] offline_fs_kbc = no KBS
+# needed (we're only doing guest-pull, not attested key release yet). Mirror uses the registry
+# ClusterIP (10.43.122.156:5000) to avoid depending on in-guest cluster-DNS resolution.
+# insecure=true is safe ONLY because the workload pulls BY DIGEST (image-rs verifies content).
+#
+version = "0.1.0"
+algorithm = "sha384"
+
+[data]
+"cdh.toml" = '''
+socket = 'unix:///run/confidential-containers/cdh.sock'
+credentials = []
+
+[kbc]
+name = 'offline_fs_kbc'
+url = ''
+
+[image]
+
+[image.registry_config]
+unqualified-search-registries = ["docker.io"]
+
+[[image.registry_config.registry]]
+prefix = "docker.io"
+location = "docker.io"
+insecure = false
+
+[[image.registry_config.registry.mirror]]
+# Portable: the registry Service's cluster DNS FQDN (stable across cluster rebuilds, unlike the
+# ClusterIP). Verified the confidential guest resolves it via CoreDNS. If cluster DNS ever fails
+# in-guest, substitute the ClusterIP: `kubectl get svc registry -o jsonpath='{.spec.clusterIP}'`.
+location = "registry.default.svc.cluster.local:5000"
+insecure = true
+'''

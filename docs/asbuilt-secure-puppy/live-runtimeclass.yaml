@@ -1,0 +1,22 @@
+apiVersion: node.k8s.io/v1
+handler: kata-qemu-nvidia-gpu
+kind: RuntimeClass
+metadata:
+  annotations:
+    meta.helm.sh/release-name: kata-deploy
+    meta.helm.sh/release-namespace: kata-system
+  creationTimestamp: "2026-06-18T09:29:47Z"
+  labels:
+    app.kubernetes.io/managed-by: Helm
+    kata-deploy/instance: default
+  name: kata-qemu-nvidia-gpu
+  resourceVersion: "9338"
+  uid: de44d5a8-c886-40b4-b7b8-365621560aca
+overhead:
+  podFixed:
+    cpu: "1"
+    memory: 10Gi
+scheduling:
+  nodeSelector:
+    katacontainers.io/kata-runtime: "true"
+    nvidia.com/cc.ready.state: "false"

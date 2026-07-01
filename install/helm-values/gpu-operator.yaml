@@ -1,0 +1,22 @@
+# NVIDIA GPU Operator (chart v26.3.2) — VFIO/Kata sandbox mode for k3s.
+# Applied by install/bootstrap.sh: helm install gpu-operator nvidia/gpu-operator -n gpu-operator -f this
+#
+# NOTE the v26.x flags: sandboxWorkloads.mode=kata (the old kataManager.enabled path is broken/empty in
+# v26.x). Kata itself is installed SEPARATELY via kata-deploy (see kata-deploy.yaml).
+#
+# ccManager.defaultMode starts "off"; bootstrap.sh flips the node to a CC node with
+#   helm upgrade ... --reuse-values --set ccManager.defaultMode=on
+# (the verified path). You may set it to "on" here directly on a greenfield install once tested.
+sandboxWorkloads:
+  enabled: true
+  defaultWorkload: vm-passthrough
+  mode: kata
+ccManager:
+  defaultMode: "off"
+# toolkit must target k3s's containerd (not the default /etc/containerd paths):
+toolkit:
+  env:
+    - name: CONTAINERD_CONFIG
+      value: /var/lib/rancher/k3s/agent/etc/containerd/config-v3.toml.tmpl
+    - name: CONTAINERD_SOCKET
+      value: /run/k3s/containerd/containerd.sock

@@ -1,4 +1,17 @@
+---
+status: superseded
+superseded-by: 0005-h100-pilot-hardware.md
+---
+
 # FLASH_ATTN is the chosen vLLM attention backend on sm_120, not a stopgap
+
+> ⚠️ **SUPERSEDED for the current pilot by ADR-0005 — do not treat the sm_120 reasoning as current.**
+> This is the **RTX PRO 6000 Blackwell (sm_120)** record. The pilot moved to **H100 (sm_90)**, where
+> **FlashAttention-3 is native and recommended**. The "FA3/FA4 is architecturally impossible" ceiling
+> below is an **sm_120** fact that does **NOT** apply to H100. `VLLM_ATTENTION_BACKEND=FLASH_ATTN` is
+> still set on H100, but for the *opposite* reason (it resolves to FA3, not FA2-as-ceiling). This ADR
+> also points at the old `manifests/day4-vllm.yaml`; the current manifests are `manifests/h100-vllm*.yaml`.
+> Kept for the historical record only. See **ADR-0005**.
 
 Bruk's GPUs are **RTX PRO 6000 Blackwell = compute capability sm_120** (workstation Blackwell),
 confirmed by Checkpoint 3's in-guest `nvidia-smi`. This is distinct from — and harder to support than

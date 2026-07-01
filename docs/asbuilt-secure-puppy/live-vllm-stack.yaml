@@ -1,0 +1,178 @@
+apiVersion: v1
+items:
+- apiVersion: apps/v1
+  kind: Deployment
+  metadata:
+    annotations:
+      deployment.kubernetes.io/revision: "1"
+      kubectl.kubernetes.io/last-applied-configuration: |
+        {"apiVersion":"apps/v1","kind":"Deployment","metadata":{"annotations":{},"labels":{"app":"vllm"},"name":"vllm","namespace":"default"},"spec":{"replicas":1,"selector":{"matchLabels":{"app":"vllm"}},"strategy":{"type":"Recreate"},"template":{"metadata":{"labels":{"app":"vllm"}},"spec":{"containers":[{"args":["--model=mistralai/Mistral-Small-3.1-24B-Instruct-2503","--served-model-name=mistral-small-3.1","--quantization=fp8","--max-model-len=32768","--gpu-memory-utilization=0.90","--host=0.0.0.0","--port=8000"],"env":[{"name":"HF_TOKEN","valueFrom":{"secretKeyRef":{"key":"token","name":"hf-token"}}},{"name":"VLLM_ATTENTION_BACKEND","value":"FLASH_ATTN"}],"image":"vllm/vllm-openai:v0.11.1","name":"vllm","ports":[{"containerPort":8000}],"readinessProbe":{"failureThreshold":90,"httpGet":{"path":"/health","port":8000},"initialDelaySeconds":60,"periodSeconds":10},"resources":{"limits":{"cpu":"8","memory":"32Gi","nvidia.com/pgpu":1},"requests":{"cpu":"4","memory":"32Gi"}},"volumeMounts":[{"mountPath":"/root/.cache/huggingface","name":"models"},{"mountPath":"/dev/shm","name":"dshm"}]}],"runtimeClassName":"kata-qemu-nvidia-gpu","volumes":[{"name":"models","persistentVolumeClaim":{"claimName":"vllm-models"}},{"emptyDir":{"medium":"Memory","sizeLimit":"8Gi"},"name":"dshm"}]}}}}
+    creationTimestamp: "2026-06-23T10:49:30Z"
+    generation: 1
+    labels:
+      app: vllm
+    name: vllm
+    namespace: default
+    resourceVersion: "1886945"
+    uid: 56dd77a5-a6e9-4d5b-8423-15b3b2564808
+  spec:
+    progressDeadlineSeconds: 600
+    replicas: 1
+    revisionHistoryLimit: 10
+    selector:
+      matchLabels:
+        app: vllm
+    strategy:
+      type: Recreate
+    template:
+      metadata:
+        labels:
+          app: vllm
+      spec:
+        containers:
+        - args:
+          - --model=mistralai/Mistral-Small-3.1-24B-Instruct-2503
+          - --served-model-name=mistral-small-3.1
+          - --quantization=fp8
+          - --max-model-len=32768
+          - --gpu-memory-utilization=0.90
+          - --host=0.0.0.0
+          - --port=8000
+          env:
+          - name: HF_TOKEN
+            valueFrom:
+              secretKeyRef:
+                key: token
+                name: hf-token
+          - name: VLLM_ATTENTION_BACKEND
+            value: FLASH_ATTN
+          image: vllm/vllm-openai:v0.11.1
+          imagePullPolicy: IfNotPresent
+          name: vllm
+          ports:
+          - containerPort: 8000
+            protocol: TCP
+          readinessProbe:
+            failureThreshold: 90
+            httpGet:
+              path: /health
+              port: 8000
+              scheme: HTTP
+            initialDelaySeconds: 60
+            periodSeconds: 10
+            successThreshold: 1
+            timeoutSeconds: 1
+          resources:
+            limits:
+              cpu: "8"
+              memory: 32Gi
+              nvidia.com/pgpu: "1"
+            requests:
+              cpu: "4"
+              memory: 32Gi
+          terminationMessagePath: /dev/termination-log
+          terminationMessagePolicy: File
+          volumeMounts:
+          - mountPath: /root/.cache/huggingface
+            name: models
+          - mountPath: /dev/shm
+            name: dshm
+        dnsPolicy: ClusterFirst
+        restartPolicy: Always
+        runtimeClassName: kata-qemu-nvidia-gpu
+        schedulerName: default-scheduler
+        securityContext: {}
+        terminationGracePeriodSeconds: 30
+        volumes:
+        - name: models
+          persistentVolumeClaim:
+            claimName: vllm-models
+        - emptyDir:
+            medium: Memory
+            sizeLimit: 8Gi
+          name: dshm
+  status:
+    availableReplicas: 1
+    conditions:
+    - lastTransitionTime: "2026-06-23T11:17:26Z"
+      lastUpdateTime: "2026-06-23T11:17:26Z"
+      message: ReplicaSet "vllm-7c88465cbb" has successfully progressed.
+      reason: NewReplicaSetAvailable
+      status: "True"
+      type: Progressing
+    - lastTransitionTime: "2026-06-23T11:22:16Z"
+      lastUpdateTime: "2026-06-23T11:22:16Z"
+      message: Deployment has minimum availability.
+      reason: MinimumReplicasAvailable
+      status: "True"
+      type: Available
+    observedGeneration: 1
+    readyReplicas: 1
+    replicas: 1
+    terminatingReplicas: 0
+    updatedReplicas: 1
+- apiVersion: v1
+  kind: Service
+  metadata:
+    annotations:
+      kubectl.kubernetes.io/last-applied-configuration: |
+        {"apiVersion":"v1","kind":"Service","metadata":{"annotations":{},"name":"vllm-svc","namespace":"default"},"spec":{"ports":[{"port":8000,"targetPort":8000}],"selector":{"app":"vllm"}}}
+    creationTimestamp: "2026-06-23T09:37:58Z"
+    name: vllm-svc
+    namespace: default
+    resourceVersion: "1859831"
+    uid: 053ae3f2-23ab-46bf-919b-88433fe2ea9a
+  spec:
+    clusterIP: 10.43.120.140
+    clusterIPs:
+    - 10.43.120.140
+    internalTrafficPolicy: Cluster
+    ipFamilies:
+    - IPv4
+    ipFamilyPolicy: SingleStack
+    ports:
+    - port: 8000
+      protocol: TCP
+      targetPort: 8000
+    selector:
+      app: vllm
+    sessionAffinity: None
+    type: ClusterIP
+  status:
+    loadBalancer: {}
+- apiVersion: v1
+  kind: PersistentVolumeClaim
+  metadata:
+    annotations:
+      kubectl.kubernetes.io/last-applied-configuration: |
+        {"apiVersion":"v1","kind":"PersistentVolumeClaim","metadata":{"annotations":{},"name":"vllm-models","namespace":"default"},"spec":{"accessModes":["ReadWriteOnce"],"resources":{"requests":{"storage":"120Gi"}},"storageClassName":"local-path"}}
+      pv.kubernetes.io/bind-completed: "yes"
+      pv.kubernetes.io/bound-by-controller: "yes"
+      volume.beta.kubernetes.io/storage-provisioner: rancher.io/local-path
+      volume.kubernetes.io/selected-node: secure-puppy
+      volume.kubernetes.io/storage-provisioner: rancher.io/local-path
+    creationTimestamp: "2026-06-23T10:49:30Z"
+    finalizers:
+    - kubernetes.io/pvc-protection
+    name: vllm-models
+    namespace: default
+    resourceVersion: "1878396"
+    uid: 2f75190a-a79c-4b65-8be1-1a782f2dfb32
+  spec:
+    accessModes:
+    - ReadWriteOnce
+    resources:
+      requests:
+        storage: 120Gi
+    storageClassName: local-path
+    volumeMode: Filesystem
+    volumeName: pvc-2f75190a-a79c-4b65-8be1-1a782f2dfb32
+  status:
+    accessModes:
+    - ReadWriteOnce
+    capacity:
+      storage: 120Gi
+    phase: Bound
+kind: List
+metadata:
+  resourceVersion: ""

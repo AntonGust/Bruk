@@ -4,6 +4,12 @@ status: accepted
 
 # Confidential serving (SEV-SNP + single-GPU SPT) is the next phase; guest attestation ≠ host TPM attestation
 
+> **Still accepted, but read with two later ADRs.** The *decision* (confidential serving is the phase;
+> the staged 1→5 bring-up; guest attestation ≠ host TPM attestation) stands and is what we executed.
+> The **hardware context** here — RTX PRO 6000 SE / SPT / ~33.8 tok/s baseline — is **amended by
+> ADR-0005** (H100 / single-GPU CC on EPYC 9224; ~100 tok/s baseline). How the model image+weights
+> actually reach the confidential guest is worked out in **ADR-0006**.
+
 With the single-node serving skeleton green (ADR-0003, Checkpoint 4 — vLLM serving Mistral-Small-3.1-24B
 FP8 in Kata+VFIO at ~33.8 tok/s), we decided the **next phase is confidential-serving bring-up** on the
 current box: run that same workload inside a **SEV-SNP** confidential guest with one GPU in **CC SPT

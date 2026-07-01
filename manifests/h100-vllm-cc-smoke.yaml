@@ -1,0 +1,81 @@
+# Confidential-serving PROOF-OF-PATH smoke test — ADR-0006.
+#
+# Purpose: prove a model serves end-to-end INSIDE the SEV-SNP confidential guest with a
+# CC-mode H100, WITHOUT yet solving the production weights-delivery pipeline. This is a
+# capability check, not the production shape.
+#
+# Why it differs from h100-vllm-cc.yaml (the 24B attempt that hit the guest-storage wall):
+#   - Tiny model (Qwen2.5-0.5B-Instruct, Apache-2.0, ungated, ~1GB) so weights fit in the
+#     guest's RAM-backed ephemeral store and download fast — no HF token, no PVC.
+#   - NO PVC: confidential GPU guest is shared_fs="none" (no virtiofs), so a host PVC cannot
+#     be mounted. Weights download into the guest's ephemeral (RAM) storage instead.
+#   - memory: 160Gi. The vLLM image is ~13GiB compressed / ~35GB unpacked and is GUEST-PULLED
+#     into the guest's RAM-backed tmpfs (ceiling ~50% of guest RAM). At 32Gi it OOM'd in 2min;
+#     at 96Gi (~52GB tmpfs) it OOM'd at ~20min right near the finish. 160Gi -> ~168GB guest ->
+#     ~84GB tmpfs, comfortably holding the ~48GB (image compressed+unpacked) + tiny weights.
+#     Box has ~490GB free; one CC pod. THIS IS BRUTE-FORCE, not the production answer — the
+#     production fix is an attached encrypted/dm-verity block device (NVMe), see ADR-0006.
+#
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: vllm-cc-smoke
+  labels: { app: vllm-cc-smoke }
+spec:
+  replicas: 1
+  strategy: { type: Recreate }
+  selector:
+    matchLabels: { app: vllm-cc-smoke }
+  template:
+    metadata:
+      labels: { app: vllm-cc-smoke }
+      annotations:
+        # Redirects the in-guest image-rs to the local mirror (ADR-0006 Part 1). Value is
+        # base64(gzip(manifests/registry/initdata.toml)) — INJECT AT APPLY TIME, never hand-maintained:
+        #   B64=$(bash manifests/registry/build-initdata.sh)
+        #   sed "s|__INITDATA_B64__|$B64|" manifests/h100-vllm-cc-smoke.yaml | kubectl apply -f -
+        io.katacontainers.config.hypervisor.cc_init_data: "__INITDATA_B64__"
+    spec:
+      runtimeClassName: kata-qemu-nvidia-gpu-snp   # confidential guest + CC GPU
+      containers:
+        - name: vllm
+          # Digest-pinned (Codex integrity req): image-rs verifies content against this digest
+          # regardless of which (untrusted, HTTP) mirror served it. docker.io ref is redirected to the
+          # local mirror by the cc_init_data registry mapping above.
+          image: docker.io/vllm/vllm-openai@sha256:d5b12dfb74d605615f8b29ebafaa52294c118bcac7bc9e941785c4108fdb913a
+          args:
+            - "--model=Qwen/Qwen2.5-0.5B-Instruct"   # tiny, Apache-2.0, ungated
+            - "--served-model-name=qwen-0.5b"
+            - "--max-model-len=8192"
+            - "--gpu-memory-utilization=0.30"        # tiny model; leave VRAM headroom
+            - "--host=0.0.0.0"
+            - "--port=8000"
+          ports: [{ containerPort: 8000 }]
+          env:
+            - name: VLLM_ATTENTION_BACKEND
+              value: "FLASH_ATTN"                    # FA3 on sm_90
+          resources:
+            limits:
+              nvidia.com/pgpu: 1
+              memory: 160Gi                          # fit the ~48GB guest-pulled image in RAM tmpfs
+              cpu: "8"
+            requests:
+              memory: 64Gi
+              cpu: "4"
+          volumeMounts:
+            - { name: dshm, mountPath: /dev/shm }
+          readinessProbe:
+            httpGet: { path: /health, port: 8000 }
+            initialDelaySeconds: 60
+            periodSeconds: 10
+            failureThreshold: 120                    # guest-pull is slow (~15-25min)
+      volumes:
+        - name: dshm
+          emptyDir: { medium: Memory, sizeLimit: 8Gi }
+---
+apiVersion: v1
+kind: Service
+metadata: { name: vllm-cc-smoke-svc }
+spec:
+  selector: { app: vllm-cc-smoke }
+  ports: [{ port: 8000, targetPort: 8000 }]

@@ -1,0 +1,44 @@
+# Seed the local registry (ADR-0006 Part 1, plan Step 2).
+#
+# Copies the vLLM image BY DIGEST into the in-cluster registry, plus a tiny busybox image used to
+# validate the initdata/mirror mechanism cheaply (plan Step 4) before paying the 13 GiB / GPU-guest cost.
+#
+# Runs as a normal-runtime Job (host containerd path reaches docker.io fine — only the confidential
+# GUEST's path is flaky). `crane copy` re-pulls from docker.io; one-time ~13 GiB.
+#
+# IMPORTANT — set the digest before applying:
+#   crane digest docker.io/vllm/vllm-openai:v0.11.1     (or: skopeo inspect)
+# then substitute it for <VLLM_DIGEST> below. The TAG in the destination is convenience only; the
+# workload pulls BY DIGEST (image-rs verifies content against the digest regardless of the mirror).
+#
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: registry-seed
+  namespace: default
+spec:
+  backoffLimit: 2
+  template:
+    metadata:
+      labels: { app: registry-seed }
+    spec:
+      restartPolicy: Never
+      # default runtime; host-pulled crane image; reaches docker.io from the host network path.
+      containers:
+        - name: crane
+          image: gcr.io/go-containerregistry/crane:debug   # :debug is busybox-based (has /bin/sh); :latest is distroless (no shell)
+          command: ["/busybox/sh", "-c"]
+          args:
+            - |
+              set -eu
+              REG="registry.default.svc.cluster.local:5000"
+              VLLM="docker.io/vllm/vllm-openai@sha256:d5b12dfb74d605615f8b29ebafaa52294c118bcac7bc9e941785c4108fdb913a"   # v0.11.1 manifest-list digest (verify with: crane digest / skopeo inspect)
+              echo "== copying vLLM (by digest) → mirror =="
+              crane copy "$VLLM" "$REG/vllm/vllm-openai:v0.11.1" --insecure
+              echo "== copying busybox (mechanism-test image) → mirror =="
+              crane copy docker.io/library/busybox:1.36 "$REG/library/busybox:1.36" --insecure
+              echo "== catalog =="
+              crane catalog "$REG" --insecure
+              echo "== vLLM digest in mirror =="
+              crane digest "$REG/vllm/vllm-openai:v0.11.1" --insecure
+              echo DONE

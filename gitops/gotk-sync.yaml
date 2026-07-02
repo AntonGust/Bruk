@@ -1,0 +1,35 @@
+# Flux entry point — the ONLY GitOps object applied by hand (bootstrap.sh step 7).
+# Everything else reconciles from Git: this Kustomization applies ./gitops/apps, which contains
+# the Flux Kustomizations for the app layer (registry mirror, trusted storage, CC workloads).
+#
+# Prereq: the read-only deploy key secret (repo is private):
+#   ssh-keygen -t ed25519 -N "" -f flux-deploy-key
+#   gh repo deploy-key add flux-deploy-key.pub --repo AntonGust/Bruk --title "flux-<node>-ro"
+#   kubectl -n flux-system create secret generic bruk-deploy-key \
+#     --from-file=identity=flux-deploy-key \
+#     --from-file=identity.pub=flux-deploy-key.pub \
+#     --from-literal=known_hosts="$(ssh-keyscan github.com 2>/dev/null)"
+#   rm flux-deploy-key flux-deploy-key.pub   # private key now lives only in the cluster
+apiVersion: source.toolkit.fluxcd.io/v1
+kind: GitRepository
+metadata:
+  name: bruk
+  namespace: flux-system
+spec:
+  interval: 1m
+  url: ssh://git@github.com/AntonGust/Bruk
+  ref: { branch: main }
+  secretRef: { name: bruk-deploy-key }
+---
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: bruk-apps
+  namespace: flux-system
+spec:
+  interval: 10m
+  path: ./gitops/apps
+  prune: true
+  sourceRef:
+    kind: GitRepository
+    name: bruk

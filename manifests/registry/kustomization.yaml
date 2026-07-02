@@ -1,0 +1,8 @@
+# Flux entry point for the mirror layer (gitops/apps/registry.yaml points here).
+# Explicit resource list: snp-mirror-test.yaml is a manual probe, NOT reconciled;
+# initdata.toml / build-initdata.sh are inputs to the workload layer, not manifests.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - registry.yaml
+  - seed-job.yaml

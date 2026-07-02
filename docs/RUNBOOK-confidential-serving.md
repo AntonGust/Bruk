@@ -85,7 +85,7 @@ B64=$(bash manifests/registry/build-initdata.sh)
 
 ### 4a. (Optional) validate the mechanism cheaply on a bare-SNP guest first
 ```bash
-sed "s|__INITDATA_B64__|$B64|" manifests/registry/snp-mirror-test.yaml | kubectl apply -f -
+sed "s|\${INITDATA_B64}|$B64|" manifests/registry/snp-mirror-test.yaml | kubectl apply -f -
 # Proof: the registry access log shows the guest GET-ing busybox (useragent oci-client), host = the mirror:
 kubectl logs -l app=registry --since=2m | grep "GET .*busybox"
 kubectl delete pod snp-mirror-test
@@ -94,7 +94,7 @@ kubectl delete pod snp-mirror-test
 ## 5. Serve the confidential workload via the mirror
 ```bash
 # Workload image is digest-pinned (image-rs verifies content regardless of the insecure mirror).
-sed "s|__INITDATA_B64__|$B64|" manifests/h100-vllm-cc-smoke.yaml | kubectl apply -f -
+sed "s|\${INITDATA_B64}|$B64|" manifests/h100-vllm-cc-smoke.yaml | kubectl apply -f -
 kubectl rollout status deploy/vllm-cc-smoke --timeout=20m
 ```
 - **Verify — pulled from the mirror, not docker.io:**
@@ -123,7 +123,7 @@ lvcreate -L 120G -n trusted-image-smoke bruk && lvcreate -L 150G -n trusted-imag
 kubectl apply -f manifests/trusted-storage.yaml               # block PVs/PVCs (volumeMode: Block)
 kubectl create secret generic hf-token --from-literal=token=$HF_TOKEN   # model is gated
 B64=$(bash manifests/registry/build-initdata.sh)
-sed "s|__INITDATA_B64__|$B64|" manifests/h100-vllm-cc.yaml | kubectl apply -f -
+sed "s|\${INITDATA_B64}|$B64|" manifests/h100-vllm-cc.yaml | kubectl apply -f -
 ```
 How the storage works (details in ADR-0006 Part 2): the **image** guest-pulls onto
 `/dev/trusted_store` (block PVC → in-guest LUKS2, ephemeral key, mounted over the image store

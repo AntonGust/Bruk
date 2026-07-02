@@ -15,6 +15,7 @@ K3S_VERSION="v1.35.5+k3s1"
 CILIUM_VERSION="1.19.5"
 GPU_OPERATOR_VERSION="v26.3.2"
 KATA_DEPLOY_VERSION="3.29.0"
+FLUX_VERSION="v2.9.0"
 set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -84,18 +85,29 @@ for i in $(seq 1 30); do
   echo "  cc.ready.state=$st"; [ "$st" = "true" ] && break; sleep 10
 done
 
-# --- 7. Local registry mirror + seed (ADR-0006 Part 1) ---------------------------------------------
-log "7/8 registry mirror + seed (digest-pinned)"
-kc apply -f "$REPO_ROOT/manifests/registry/registry.yaml"
-kc rollout status deploy/registry --timeout=180s
-kc apply -f "$REPO_ROOT/manifests/registry/seed-job.yaml"
-kc wait --for=condition=complete job/registry-seed --timeout=1200s
-kc logs -l app=registry-seed --tail=3 | grep -i "vLLM digest in mirror" || true
+# --- 7. GitOps: Flux reconciles the app layer from Git (Phase 3.1 / gitops/README.md) ---------------
+# The registry mirror, trusted-storage PVs/PVCs, and CC workloads are no longer applied here —
+# Flux converges them from the repo (gitops/apps/). Two out-of-band prereqs stay manual:
+#   - hf-token secret (gated 24B):  kubectl create secret generic hf-token --from-literal=token=$HF_TOKEN
+#   - LVM LVs for /dev/trusted_store (host-setup.sh / RUNBOOK §7)
+log "7/8 Flux $FLUX_VERSION (controllers + point at the repo)"
+kc apply -f "https://github.com/fluxcd/flux2/releases/download/$FLUX_VERSION/install.yaml"
+kc -n flux-system wait --for=condition=Available deploy --all --timeout=300s
+if ! kc -n flux-system get secret bruk-deploy-key >/dev/null 2>&1; then
+  echo "MISSING deploy key secret 'bruk-deploy-key' (repo is private)."
+  echo "Create it (recipe in gitops/gotk-sync.yaml header), then re-run this step:"
+  echo "  kubectl apply -f $REPO_ROOT/gitops/gotk-sync.yaml"
+  exit 1
+fi
+kc apply -f "$REPO_ROOT/gitops/gotk-sync.yaml"
 
-# --- 8. Confidential workload via the mirror -------------------------------------------------------
-log "8/8 confidential small-model workload (cc_init_data mirror + digest-pinned image)"
-B64="$(bash "$REPO_ROOT/manifests/registry/build-initdata.sh")"
-sed "s|__INITDATA_B64__|$B64|" "$REPO_ROOT/manifests/h100-vllm-cc-smoke.yaml" | kc apply -f -
+# --- 8. Wait for convergence + verify ---------------------------------------------------------------
+log "8/8 wait for Flux to converge the app layer"
+for ks in bruk-apps bruk-registry bruk-cluster; do
+  kc -n flux-system wait --for=condition=Ready "kustomization/$ks" --timeout=600s || true
+  kc -n flux-system get "kustomization/$ks" --no-headers
+done
+kc rollout status deploy/registry --timeout=300s
 kc rollout status deploy/vllm-cc-smoke --timeout=1200s
 
 log "VERIFY"
@@ -108,4 +120,5 @@ echo "- serves:"
 kc exec "$POD" -- curl -s localhost:8000/v1/chat/completions -H 'Content-Type: application/json' \
   -d '{"model":"qwen-0.5b","messages":[{"role":"user","content":"hi"}],"max_tokens":16}' || true
 echo
-log "DONE — confidential small-model serving is up."
+log "DONE — Flux owns the app layer; confidential small-model serving is up."
+echo "The 24B (vllm-cc) also reconciles from Git — it needs the hf-token secret + trusted-storage LVs."

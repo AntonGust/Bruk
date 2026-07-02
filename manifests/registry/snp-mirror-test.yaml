@@ -4,7 +4,7 @@
 #
 # Apply with the base64 injected from the initdata TOML (no hand-maintained blob):
 #   B64=$(bash manifests/registry/build-initdata.sh)
-#   sed "s|__INITDATA_B64__|$B64|" manifests/registry/snp-mirror-test.yaml | kubectl apply -f -
+#   sed "s|\${INITDATA_B64}|$B64|" manifests/registry/snp-mirror-test.yaml | kubectl apply -f -
 #
 # Proof it used the mirror: after it starts, check the registry pod logs for a GET of
 # library/busybox — `kubectl logs -l app=registry | grep busybox`. If the guest pulled from the mirror,
@@ -18,7 +18,7 @@ metadata:
   name: snp-mirror-test
   labels: { app: snp-mirror-test }
   annotations:
-    io.katacontainers.config.hypervisor.cc_init_data: "__INITDATA_B64__"
+    io.katacontainers.config.hypervisor.cc_init_data: "${INITDATA_B64}"
 spec:
   runtimeClassName: kata-qemu-snp        # confidential guest, no GPU (fast ~20s boot)
   restartPolicy: Never

@@ -30,11 +30,13 @@ spec:
     metadata:
       labels: { app: vllm-cc-smoke }
       annotations:
-        # Redirects the in-guest image-rs to the local mirror (ADR-0006 Part 1). Value is
-        # base64(gzip(manifests/registry/initdata.toml)) — INJECT AT APPLY TIME, never hand-maintained:
+        # Redirects the in-guest image-rs to the local mirror + serial unpack (ADR-0006). Value is
+        # base64(gzip(manifests/registry/initdata.toml)). GitOps: Flux substitutes the variable
+        # post-build (blob lives in gitops/apps/cluster.yaml — regenerate with build-initdata.sh
+        # when initdata.toml changes). Manual apply:
         #   B64=$(bash manifests/registry/build-initdata.sh)
-        #   sed "s|__INITDATA_B64__|$B64|" manifests/h100-vllm-cc-smoke.yaml | kubectl apply -f -
-        io.katacontainers.config.hypervisor.cc_init_data: "__INITDATA_B64__"
+        #   sed "s|\${INITDATA_B64}|$B64|" manifests/h100-vllm-cc-smoke.yaml | kubectl apply -f -
+        io.katacontainers.config.hypervisor.cc_init_data: "${INITDATA_B64}"
     spec:
       runtimeClassName: kata-qemu-nvidia-gpu-snp   # confidential guest + CC GPU
       containers:

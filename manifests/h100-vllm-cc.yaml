@@ -24,7 +24,8 @@
 # Prereqs: hf-token secret (model is gated); registry mirror running + seeded (manifests/registry/).
 # Apply with initdata injected (NEVER hand-maintained):
 #   B64=$(bash manifests/registry/build-initdata.sh)
-#   sed "s|__INITDATA_B64__|$B64|" manifests/h100-vllm-cc.yaml | kubectl apply -f -
+#   sed "s|\${INITDATA_B64}|$B64|" manifests/h100-vllm-cc.yaml | kubectl apply -f -
+# (GitOps path: Flux applies this file with the blob substituted — gitops/apps/cluster.yaml.)
 #
 apiVersion: v1
 kind: ConfigMap
@@ -47,8 +48,10 @@ spec:
     metadata:
       labels: { app: vllm-cc }
       annotations:
-        # Redirects in-guest image-rs to the local mirror (base64(gzip(initdata.toml))).
-        io.katacontainers.config.hypervisor.cc_init_data: "__INITDATA_B64__"
+        # Redirects in-guest image-rs to the local mirror + serial unpack (base64(gzip(initdata.toml))).
+        # GitOps: Flux substitutes post-build (blob in gitops/apps/cluster.yaml); manual apply: see
+        # the sed recipe in h100-vllm-cc-smoke.yaml.
+        io.katacontainers.config.hypervisor.cc_init_data: "${INITDATA_B64}"
     spec:
       runtimeClassName: kata-qemu-nvidia-gpu-snp   # confidential guest + CC GPU
       containers:

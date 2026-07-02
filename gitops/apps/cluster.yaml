@@ -1,0 +1,28 @@
+# Confidential app layer: trusted storage (block PVs/PVCs) + the two CC workloads.
+# Reconciles manifests/ (explicit kustomization.yaml lists trusted-storage + the workloads).
+#
+# INITDATA_B64 = base64(gzip(manifests/registry/initdata.toml)) — the cc_init_data annotation
+# value substituted into the workload manifests post-build. REGENERATE when initdata.toml
+# changes:  bash manifests/registry/build-initdata.sh   → paste the output below.
+# NOTE: changing this value rolls BOTH CC pods (the 24B re-downloads ~90GB weights, ~30 min).
+#
+# Out-of-band prereqs (deliberately NOT in Git): the hf-token secret (gated model) and the
+# host-side LVM LVs (RUNBOOK §7 / install/host-setup.sh).
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: bruk-cluster
+  namespace: flux-system
+spec:
+  interval: 10m
+  path: ./manifests
+  prune: true
+  targetNamespace: default
+  dependsOn:
+    - name: bruk-registry
+  sourceRef:
+    kind: GitRepository
+    name: bruk
+  postBuild:
+    substitute:
+      INITDATA_B64: "H4sICDaMRmoAA2luaXRkYXRhLnRvbWwAhVZrbyI3FP3Or7hiPwAqY8izLatIzeaxizavBdKqjRBrZgy4DPbU9pCwVVf9Ef2F/SU99sxAsltpvyTM2Pd17rnnzit6zx0nqaRL/I9///6HjEikEbGz5BYCR9E8F9aRXPG5iIylplRWJoJirWb4r5zkaeSto0U+bZHTwS7VMU9pJY3Rpl17RVbTmT7TFJxFWZ6mlFthScKzsk7whPSMEh0vhWFSU/P0fBB1u91juuPG0V6bspQrGjqR0WGL1V7B52gh4aDIc3h7Pzi7oNtLGg3uR+8YTXOZJlFVGbMLmn+Smf1uyq04PoyEinVSxS9zznRCXCntuJNaIQCR1GwJc9TquFTCWBbKnrPFJhNmLa02LI4nPszEx4FRM0AqnrKAYRGu+fa3/l3T6VXaar0mpWnBVRKt4DK4TWia6ilrhaquL87end70h9fUXAsjZxLHfM49SiV6sV5lWgF5Sz9RIg5mx7NZO1SAkxUq8inTAdv/kXUpg2GrF4qJwkGEPiqHNsd6ruQnYHB7c/UrzI0QOyY8+L9jWoqN7RHnzOfepjhZlL8yncp4w4yYa0anauMWUs1DFCKRWkFNweaMOFmHUnmKfKmO29I6I0UBY73luzfsX13cjJDB+eD27u7iPJDQLbijR170VnCTSmHQ0jkrC9mycS6AQul3U/Ktg5JFnJuSo/OiwJnRq20BDUsPwQerbCfF3XFZQ1MbJP/FYW4CMya5kS1GfUdKoEW4xRNLHeHizo4onS+KrTK/DinSimfozJxO6OH/E9k+s6Ko8Zj5mfLxX/tZwGC+G43u4KCq9sSZXLAy/y1AIYMSmKZt0WV/MBwFtqgArjZyLhVm1cOOKeX0qM3Sp1bYlDXOeJpaP9zbES1m8BeMjdFrLwgB5Qpgapak6TxjCuiE8S30JBEznqfOAsiH5TQeY/xnKZCbzOwEz6gLY/L+zRAxlBAJhqD5KBroqVbpBln4DHdi0sZtR9w5vMBV0BZdSQWGjzbCIUYJe9AcX3aFLtyfpTmMTP+OmntddnjA9vb32d7Rce8I+hMEja+1TJBxJlTi42q108W4sI7Ob4ZwanWa+xb5Nrzoi2e65bMSpamIOVIJmXi4Uw3983VYeoNB6L+9GI4gtFUPSx2wns8Owxv0Dy8tIgGoepftsW69xtM5uukWK//OLvjBD4f1Wq2Y5Fq96kwdp41Go2Z9I51/yJV86nU6HZOrzgtVf8Zmb+0tGrUYC6I4t569Y0Tw/aspvhLe28s+Nmq5SUNE3AsF+QkbXHy47w8w6zP0pJOIdQcY+c5NrNPocVE6FQ+6ICoU22wyV4hlvEQ71jIWrd6W6pjpklSIcBA98k2UcQPeipRSvgGJE/2oPNSdXGUcLlCfBQtQDSg14xIVVUobIj65w0ir6Or+/XC/SMbre/0SN5EGiFH6Kbz74QAjMEyeAfU2fd7bw4JRbSyVTcn6wek1WYhuqxg39BWTF7ahp4H1tLnUuUKNG5pK8Me7ov3u/nHU/T7q7lPzubZ3vl4I5TrAlomhuxK9F5RnYLrgq0pAzzQyWUseirw6vSknvYeE8VNVgB8cvX1TgEvNz8fsKJyhyAHkbkNrS5+P8LKCOPJrNEJ9IOeKP3kVA/kNkpoEeCYV+HaCzTkp/J7QXkWLr4U4V3/kPA0LMLLYAfEi2mmqp159q0V1z8Jv6Oh4XMuMmMknPx07y1qlql+83u6QE699Vnw7wFaoAfGdNo5PU9F7ITY09N8MsQBTS9kgLxuXH85vqGmDAfHYaLs7NyJ8yNg2uJbKZZCM55oFafu5+koovgB281tyLqjSuvjW8V0/A48RFgts9iKNUucxBUG8Cn1rk82nILXLXSFX28g9+rjMIWQu9UuY7Dre1Rlp+t1qDIdbnDT+ZBbfQiyuDP9qfGQvUN8CWI4vg6/qelh6aZDiFz3xmlrzMvYf7WkJR8MKAAA="

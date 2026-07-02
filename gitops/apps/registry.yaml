@@ -1,0 +1,15 @@
+# Mirror layer: local registry + digest-pinned seed Job (ADR-0006 Part 1).
+# Reconciles manifests/registry/ (explicit kustomization.yaml there excludes manual probes).
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: bruk-registry
+  namespace: flux-system
+spec:
+  interval: 10m
+  path: ./manifests/registry
+  prune: true
+  targetNamespace: default
+  sourceRef:
+    kind: GitRepository
+    name: bruk

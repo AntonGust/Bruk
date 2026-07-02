@@ -108,6 +108,13 @@ kubectl rollout status deploy/vllm-cc-smoke --timeout=20m
   'Content-Type: application/json' -d '{"model":"qwen-0.5b","messages":[{"role":"user","content":"hi"}]}'`
   → a completion. Reference: ~5.5 min to Ready (LAN mirror pull), ~378 tok/s warm (Qwen-0.5B).
 
+## 6. Prove it cryptographically (attestation verify + perf delta)
+Run the committed suite in **`manifests/attestation/`** (see its README): PSP report verified
+against AMD KDS (VCEK→ASK→ARK + signature + nonce), GPU attestation via nvtrust (SPDM + cert
+chain + RIM/measurement match), and the same-model CC-vs-non-CC benchmark. Reference results
+2026-07-02: all checks pass; CC overhead **13.5 %** single-stream / **10.8 %** batched
+(Qwen-0.5B). Re-run this suite after any storage/runtime/config change to the confidential path.
+
 ---
 
 ## Reproducibility caveats

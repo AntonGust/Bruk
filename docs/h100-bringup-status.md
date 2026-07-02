@@ -1,5 +1,41 @@
 # H100 bring-up status (`anton-bruk`, ssh ubuntu@77.87.121.15)
 
+## ✅ DONE (2026-07-02): Day-5 attestation VERIFIED + CC perf delta recorded (ADR-0004 steps 4–5)
+
+The confidential path is now *cryptographically proven*, not just "boots in SNP". Suite committed as
+`manifests/attestation/` (re-run it after any storage/runtime change — it's the regression gate).
+
+- **PSP report verified against AMD KDS** (in a bare `kata-qemu-snp` pod, snpguest v0.10.0): fresh
+  64-byte nonce → `snpguest report` → `fetch ca`/`fetch vcek` (Genoa) → **`verify certs`: ARK
+  self-signed ✓, ASK←ARK ✓, VCEK←ASK ✓** → **`verify attestation`: all four TCB components match +
+  "VEK signed the Attestation Report!"** → report_data == our nonce (byte-identical). Report v5,
+  VMPL 1, TCB µcode 88 / SNP 27 / bootloader 10, `Debug Allowed: false`. Two real gotchas: busybox
+  has **no CA bundle** (kubectl-cp the host's `ca-certificates.crt`, set `SSL_CERT_FILE`), and
+  `/dev/sev-guest` still needs the privileged-mknod dance (major 10, minor 257).
+- **GPU device attestation PASSED** (nvtrust `nv-local-gpu-verifier` inside the running CC vLLM pod):
+  device cert chain + OCSP revocation ✓, SPDM nonce ✓, attestation-report signature ✓, **driver RIM +
+  VBIOS RIM fetched from the NVIDIA RIM service and signature-verified ✓, runtime measurements ==
+  golden ✓**, "GPU is in expected state", ready state READY, `CC Environment: PRODUCTION`. Driver
+  590.48.01, VBIOS 96.00.74.00.11. Gotcha: the CC guest resolves **IPv6-first but has no v6 route**
+  → pip/requests fail "Network is unreachable" while IPv4 works; fix = pin A records in `/etc/hosts`
+  (`verify-gpu.sh` automates it). Note: `nv-local-gpu-verifier` is **deprecated, EOL 2026-09-15** —
+  migrate to NVIDIA's C++ attestation-sdk when productizing.
+- **Same-model CC-vs-non-CC perf delta** (Qwen2.5-0.5B, identical image digest/args/FLASH_ATTN,
+  400-tok warm requests, `manifests/attestation/bench.py`):
+  | | non-CC | CC (SEV-SNP + CC GPU) | overhead |
+  |---|---|---|---|
+  | single-stream mean | **460.7 tok/s** | **398.6 tok/s** | **13.5 %** |
+  | batched ×8 aggregate | **3293.7 tok/s** | **2937.1 tok/s** | **10.8 %** |
+  Right in the published ~12–15 % band (Phala) — a usable-rate cost, as ADR-0004/0006 predicted.
+  Method: node flipped non-CC via `ccManager.defaultMode=off` **with all GPU pods scaled to 0 first**
+  (clean flip ≈1 min/direction, no collateral), non-CC twin `manifests/attestation/vllm-qwen-noncc.yaml`,
+  then flipped back to CC and the smoke pod restored + re-verified.
+
+**ADR-0004 is now fully executed (steps 1–5).** Remaining confidential-serving work is ADR-0006
+Part 2 (block storage → 24B) and, later, host attestation (TPM) / Pattern-A key release.
+
+---
+
 ## ✅ RESOLVED (2026-07-01): reboot succeeded — GPUs live, ClusterPolicy ready
 A warm reboot (`sudo reboot` over SSH) was triggered at 08:36 UTC against this doc's own advice (no
 BMC/tech standby was available — proceeded anyway on explicit user instruction, accepting the risk).
@@ -240,25 +276,27 @@ a `nvidia-cc-manager` restart now sees "both already on, matches config → skip
     RAM tmpfs) — ADR-0006 Part 2, the next effort. Attestation *verify* (Day-5 PSP/GPU) + a same-model
     CC-vs-non-CC perf delta remain as follow-ups.
 
-## What's proven vs what's blocked (updated 2026-07-01)
+## What's proven vs what's blocked (updated 2026-07-02)
 - ✅ **Proven:** SEV-SNP host live; bare confidential guest + genuine AMD-PSP attestation report; both
   H100s flipped to CC mode via the operator (consistent all-CC node); non-CC vLLM baseline **~100 tok/s**;
   **confidential small-model serving end-to-end via a local registry mirror** (image guest-pulled from the
-  mirror by digest, SEV-SNP + CC-GPU, ~378 tok/s warm on Qwen-0.5B).
+  mirror by digest, SEV-SNP + CC-GPU, ~378 tok/s warm on Qwen-0.5B); **Day-5 attestation VERIFIED**
+  (PSP report validates against AMD KDS; GPU attestation passes via nvtrust; CC overhead **13.5 %**
+  single-stream / **10.8 %** batched vs non-CC same-model — see top of this doc).
 - ⏭️ **Remaining (logistics, not security):** confidential **large (24B)** serving needs **block-device
   storage** — the 35 GB image + tens of GB of weights don't fit the RAM tmpfs, and `shared_fs=none` kills
-  the virtiofs PVC path. That's ADR-0006 **Part 2**. Also open: Day-5 attestation *verify* (PSP against AMD
-  KDS + GPU nvtrust) and a same-model CC-vs-non-CC perf delta. Eventually KBS attested key release (Pattern
-  A) for at-rest weight confidentiality.
+  the virtiofs PVC path. That's ADR-0006 **Part 2**. Eventually KBS attested key release (Pattern
+  A) for at-rest weight confidentiality, and host attestation once the discrete TPM lands.
 
 ## Next
 - ✅ **Local registry mirror — DONE** (ADR-0006 Part 1): `manifests/registry/` (registry + seed-job +
   initdata + build-initdata.sh); the `cc_init_data` mirror config is proven end-to-end for confidential
   guest-pull. Small-model confidential serving works.
+- ✅ **Day-5 attestation verify — DONE** (2026-07-02): PSP report validated against AMD KDS, GPU
+  attestation passed (nvtrust), perf delta recorded (13.5 % / 10.8 %). Suite: `manifests/attestation/`.
 - **ADR-0006 Part 2 (the 24B unblock):** attach an encrypted/dm-verity **block device** for image+weights
   (off RAM) so a large model fits; then confidential 24B serving.
-- **Day-5 follow-ups:** attestation *verify* (PSP → AMD KDS; GPU → nvtrust) + same-model CC-vs-non-CC perf
-  delta. · **TPM** (host attestation, on the discrete TPM).
+- **TPM** (host attestation, on the discrete TPM).
 
 ## Operational notes
 - **Reboots take 20-30+ min on this box, structurally** — confirmed root cause: SEV-SNP RMP table init

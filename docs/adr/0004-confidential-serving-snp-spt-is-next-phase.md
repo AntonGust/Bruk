@@ -9,6 +9,12 @@ status: accepted
 > The **hardware context** here — RTX PRO 6000 SE / SPT / ~33.8 tok/s baseline — is **amended by
 > ADR-0005** (H100 / single-GPU CC on EPYC 9224; ~100 tok/s baseline). How the model image+weights
 > actually reach the confidential guest is worked out in **ADR-0006**.
+>
+> **All five steps are now executed.** Steps 1–3: 2026-06-30/07-01. Steps 4–5: **2026-07-02** —
+> PSP report verified against AMD KDS (VCEK→ASK→ARK + signature + nonce) and GPU attestation
+> passed (nvtrust: SPDM + cert chain + RIM/measurement match); same-model CC-vs-non-CC delta
+> **13.5 % single-stream / 10.8 % batched** (Qwen-0.5B). Suite: `manifests/attestation/`;
+> results: `docs/h100-bringup-status.md`.
 
 With the single-node serving skeleton green (ADR-0003, Checkpoint 4 — vLLM serving Mistral-Small-3.1-24B
 FP8 in Kata+VFIO at ~33.8 tok/s), we decided the **next phase is confidential-serving bring-up** on the

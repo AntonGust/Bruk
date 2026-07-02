@@ -266,33 +266,58 @@ kubectl exec $POD -- curl -s http://localhost:8000/v1/chat/completions \
 
 ---
 
-## Day 5 — Attestation (GPU + PSP verify) + perf delta 🟠 EXPECTED (not yet executed)
+## Day 5 — Attestation (GPU + PSP verify) + perf delta ✅ VERIFIED (2026-07-02)
 
-> Not run on our box yet. The tooling below is the pre-agreed path (ADR-0004 step 4-5); validate and
-> record real output before grading a class on it. H100 attestation is the *more* mature path
-> (go-nvtrust / NVIDIA NRAS list H100 as a primary target), so expect fewer rough edges than on the
-> RTX PRO 6000 SE.
+> Executed on the reference box 2026-07-02. The committed, re-runnable suite is
+> **`manifests/attestation/`** (pod manifest + `verify-psp.sh` + `verify-gpu.sh` + `bench.py` +
+> the non-CC twin manifest) — grade students against that. Real output below.
 
-### GPU device attestation (nvtrust)
-- Use **NVIDIA nvtrust** (github.com/NVIDIA/nvtrust) — the local GPU verifier / attestation SDK — inside
-  the confidential guest to run the GPU's SPDM handshake and validate its device certificate chain.
-- Note the **GPU may be locked (no CUDA) until attestation + ready-state** on CC-On; a working vLLM is
-  itself partial evidence the unlock happened. Make the check explicit (query CC mode + run the verifier)
-  rather than inferring it.
-- `nvidia_gpu_tools.py --query-cc-mode` on the host is the cheap cross-check that the device is CC-on.
+### Verify the PSP report against AMD's chain (`verify-psp.sh`)
+- Flow: fresh 64-byte nonce → `snpguest report` → `snpguest fetch ca pem <dir> genoa` +
+  `snpguest fetch vcek` → `snpguest verify certs` → `snpguest verify attestation` → compare
+  `Report Data` to the nonce. VERIFIED output:
+  ```
+  The AMD ARK was self-signed!
+  The AMD ASK was signed by the AMD ARK!
+  The VCEK was signed by the AMD ASK!
+  Reported TCB Boot Loader from certificate matches the attestation report.
+  Reported TCB TEE from certificate matches the attestation report.
+  Reported TCB SNP from certificate matches the attestation report.
+  Reported TCB Microcode from certificate matches the attestation report.
+  VEK signed the Attestation Report!
+  ```
+  Report Data == our nonce, byte-identical (freshness — not a replay).
+- **Gotcha (will hit):** busybox has **no CA certificate bundle**, so `snpguest fetch` fails TLS to
+  `kdsintf.amd.com` with "self-signed certificate in certificate chain" (an empty trust store makes
+  *every* chain look untrusted — nothing is wrong with KDS). Fix: `kubectl cp` the host's
+  `/etc/ssl/certs/ca-certificates.crt` into the pod and `export SSL_CERT_FILE=…`.
 
-### Verify the PSP report against AMD's chain
-- Fetch the **VCEK** for the reported TCB from **AMD KDS** and verify VCEK → ASK → ARK, then verify the
-  report signature and that **Measurement** matches expectation and **Report Data** = your nonce.
-  `snpguest fetch`/`snpguest verify` (or `sev-snp-measure` for the expected launch measurement) are the
-  tools; show it *validates*, not just parses.
+### GPU device attestation (nvtrust — `verify-gpu.sh`)
+- Run inside the running CC vLLM pod: `pip install nv-local-gpu-verifier`, then
+  `python3 -m verifier.cc_admin --allow_hold_cert`. VERIFIED result (driver 590.48.01, VBIOS
+  96.00.74.00.11): cert chain + OCSP revocation ✓, SPDM nonce ✓, report signature ✓, driver+VBIOS
+  RIMs fetched from the NVIDIA RIM service and signature-verified ✓, **runtime measurements match
+  golden** ✓, "GPU is in expected state", ready state READY → `GPU Attestation is Successful.`
+- Cheap explicit cross-checks first: `nvidia-smi conf-compute -f` → `CC status: ON`,
+  `-grs` → `ready`, `-e` → `CC Environment: PRODUCTION` (explicit beats inferring from vLLM working).
+- **Gotcha (will hit):** the CC guest resolves **IPv6-first but has no IPv6 route** — pip/requests
+  fail `Network is unreachable` while IPv4 egress works. Fix: pin IPv4 A records for `pypi.org`,
+  `files.pythonhosted.org`, `rim.attestation.nvidia.com`, `ocsp.ndis.nvidia.com` in the pod's
+  `/etc/hosts` (the script automates it).
+- **Deprecation:** `nv-local-gpu-verifier` reaches EOL **2026-09-15**; the successor is NVIDIA's C++
+  attestation-sdk (github.com/NVIDIA/attestation-sdk). Fine for teaching; migrate for production.
 
-### Perf delta
-- Compare **same model both sides** — the confidential small-model tok/s vs a **non-CC run of that same
-  small model**, not against the 24B ~100 tok/s baseline (apples-to-apples). Expect a drop from encrypted
-  CPU↔GPU bounce buffers — **the number is the deliverable, not a regression to fix.** Published
-  reference: **~12% overhead (7B) / ~15% (70B, 8×H100)** (Phala) — a usable-rate cost, not a cliff.
-  Report single-stream and, ideally, batched.
+### Perf delta ✅ measured (Qwen2.5-0.5B, same image digest/args both sides, 400-tok warm)
+| | non-CC | CC | overhead |
+|---|---|---|---|
+| single-stream mean (n=5) | 460.7 tok/s | 398.6 tok/s | **13.5 %** |
+| batched ×8 aggregate | 3293.7 tok/s | 2937.1 tok/s | **10.8 %** |
+
+- Right in the published **~12–15 %** band (Phala). **The number is the deliverable, not a regression
+  to fix.** Compare **same model both sides** — never against the 24B ~100 tok/s baseline.
+- The non-CC side requires flipping the node (`ccManager.defaultMode=off`, RUNBOOK §2) — **scale all
+  GPU pods to 0 and confirm no qemu holds a GPU first** (the mixed-state force-reset is the classic
+  ~19-min-outage trap). A clean flip is ~1 min per direction; flip back to CC and re-verify when done.
 
 ---
 
@@ -325,8 +350,8 @@ kubectl exec $POD -- curl -s http://localhost:8000/v1/chat/completions \
       Known walls on our box: guest-pull OOM (Gotcha B) and in-guest registry egress (Gotcha E) — you may
       need a **local registry mirror** (ADR-0006) before it goes green. Do **not** target 24B; that's
       roadmap. Capture the same-model CC-vs-non-CC perf delta.
-- [ ] **Day 5 (attestation)** — run the GPU (nvtrust) + PSP (AMD KDS) verification yourself and paste
-      real output here before grading on it. Currently 🟠 EXPECTED.
+- [x] **Day 5 (attestation)** — VERIFIED on the reference box 2026-07-02; real output pasted in the
+      Day-5 section above; re-runnable suite in `manifests/attestation/`.
 - [ ] **Read `docs/adr/0006-confidential-weights-delivery-storage.md`** — it's the "why Day 4 is scoped to
       a small model" backing; the large-model image/weights pipeline (block device + mirror + KBS) is a
       platform sub-project, not a sprint task.

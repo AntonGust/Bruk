@@ -75,10 +75,8 @@ for i in $(seq 1 60); do
 done
 kc get clusterpolicy cluster-policy -o jsonpath='{.status.state}'; echo
 
-# --- 6. Make it a CC node (both GPUs confidential) -------------------------------------------------
-log "6/8 flip node to CC (ccManager.defaultMode=on) — verified path"
-helm upgrade gpu-operator nvidia/gpu-operator -n gpu-operator --version "$GPU_OPERATOR_VERSION" \
-  --reuse-values --set ccManager.defaultMode=on
+# --- 6. Wait for the CC node (ccManager.defaultMode=on comes from the values file) -----------------
+log "6/8 wait for CC node (both GPUs confidential — gpu-operator.yaml sets defaultMode=on)"
 echo "waiting for cc.ready.state=true..."
 for i in $(seq 1 30); do
   st=$(kc get node -o jsonpath='{.items[0].metadata.labels.nvidia\.com/cc\.ready\.state}' 2>/dev/null)

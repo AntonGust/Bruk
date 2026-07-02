@@ -1,0 +1,16 @@
+# Flux entry point (gitops/apps/helm.yaml → bruk-helm-values): publishes these values files —
+# the SAME ones install/bootstrap.sh feeds to `helm install` — as ConfigMaps in flux-system,
+# which the HelmReleases in gitops/helm/ consume via valuesFrom. Single source of truth:
+# edit the .yaml files here; never fork values into the HelmRelease specs.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: flux-system
+generatorOptions:
+  disableNameSuffixHash: true
+configMapGenerator:
+  - name: cilium-values
+    files: [cilium.yaml]
+  - name: gpu-operator-values
+    files: [gpu-operator.yaml]
+  - name: kata-deploy-values
+    files: [kata-deploy.yaml]

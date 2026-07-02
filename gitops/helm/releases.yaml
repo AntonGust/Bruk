@@ -1,0 +1,61 @@
+# HelmReleases adopting the CLI-installed releases (Stage B). ADOPTION CONTRACT:
+# releaseName + storageNamespace match the live releases exactly, and the values ConfigMaps
+# (install/helm-values/, via bruk-helm-values) matched `helm get values` at adoption time —
+# verified 2026-07-02 with a rendered-manifest diff (only helm-hook artifacts + regenerated
+# Hubble TLS certs differed). A values change here IS a cluster change: helm-controller
+# upgrades the release. ⚠️ gpu-operator: ccManager.defaultMode MUST stay "on" — applying
+# "off" force-flips GPU CC mode node-wide (~19-min-outage class; scale GPU pods to 0 first
+# if a flip is ever intended).
+apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
+metadata:
+  name: cilium
+  namespace: flux-system
+spec:
+  interval: 30m
+  releaseName: cilium
+  targetNamespace: kube-system
+  storageNamespace: kube-system
+  chart:
+    spec:
+      chart: cilium
+      version: "1.19.5"
+      sourceRef: { kind: HelmRepository, name: cilium }
+  valuesFrom:
+    - { kind: ConfigMap, name: cilium-values, valuesKey: cilium.yaml }
+---
+apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
+metadata:
+  name: gpu-operator
+  namespace: flux-system
+spec:
+  interval: 30m
+  releaseName: gpu-operator
+  targetNamespace: gpu-operator
+  storageNamespace: gpu-operator
+  chart:
+    spec:
+      chart: gpu-operator
+      version: "v26.3.2"
+      sourceRef: { kind: HelmRepository, name: nvidia }
+  valuesFrom:
+    - { kind: ConfigMap, name: gpu-operator-values, valuesKey: gpu-operator.yaml }
+---
+apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
+metadata:
+  name: kata-deploy
+  namespace: flux-system
+spec:
+  interval: 30m
+  releaseName: kata-deploy
+  targetNamespace: kata-system
+  storageNamespace: kata-system
+  chart:
+    spec:
+      chart: kata-deploy
+      version: "3.29.0"
+      sourceRef: { kind: HelmRepository, name: kata-deploy-charts }
+  valuesFrom:
+    - { kind: ConfigMap, name: kata-deploy-values, valuesKey: kata-deploy.yaml }

@@ -4,15 +4,17 @@
 # NOTE the v26.x flags: sandboxWorkloads.mode=kata (the old kataManager.enabled path is broken/empty in
 # v26.x). Kata itself is installed SEPARATELY via kata-deploy (see kata-deploy.yaml).
 #
-# ccManager.defaultMode starts "off"; bootstrap.sh flips the node to a CC node with
-#   helm upgrade ... --reuse-values --set ccManager.defaultMode=on
-# (the verified path). You may set it to "on" here directly on a greenfield install once tested.
+# ccManager.defaultMode: "on" is the DESIRED STATE (all-CC node) and what Flux reconciles
+# (gitops/helm/ — Stage B). This file must match the live release values: a HelmRelease applying
+# "off" to a live CC node force-flips GPU CC mode node-wide (the ~19-min-outage class of event).
+# Greenfield bring-up: bootstrap.sh installs with this file directly — the GPUs come up CC-on
+# after ClusterPolicy is ready (the staged off→on flip was only needed before this was verified).
 sandboxWorkloads:
   enabled: true
   defaultWorkload: vm-passthrough
   mode: kata
 ccManager:
-  defaultMode: "off"
+  defaultMode: "on"
 # toolkit must target k3s's containerd (not the default /etc/containerd paths):
 toolkit:
   env:

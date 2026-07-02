@@ -68,15 +68,16 @@ each customer's dedicated cluster.
    *confidential* serving the workload runs in a SEV-SNP + CC-GPU Kata guest (guest attestation via
    AMD-PSP + GPU device report).
 
-## What's BUILT vs DESIGNED (honest status, 2026-07-01)
+## What's BUILT vs DESIGNED (honest status, 2026-07-02)
 
 | Piece | Status |
 |---|---|
 | Per-cluster serving stack (k3s, Cilium, GPU Operator, kata-deploy) | ✅ Built (one reference cluster) |
 | Confidential serving (SEV-SNP + CC-GPU + Kata) — small model | ✅ Built & proven (see `h100-bringup-status.md`) |
 | Local registry mirror for confidential guest-pull | ✅ Built (`manifests/registry/`, ADR-0006 Part 1) |
-| Confidential serving of a *large* (24B) model | 📋 Blocked on block-device storage (ADR-0006 Part 2) |
-| GitOps/Flux repo + Helm umbrella for the whole per-cluster stack | 📋 Designed (compendium), not built |
+| Confidential serving of a *large* (24B) model | ✅ Built (ADR-0006 Part 2 executed 2026-07-02: block storage, ~2 % CC overhead) |
+| GitOps/Flux — app layer (registry, storage, CC workloads) | ✅ Built (Phase 3.1 Stage A, 2026-07-02: `gitops/`, self-healing, prune) |
+| GitOps/Flux — Helm layer (Cilium/GPU Operator/kata-deploy as HelmReleases) | 📋 Stage B planned (⚠️ values-vs-live diff first — `ccManager.defaultMode`) |
 | Airon Operator + CRDs | 📋 Designed (ADR-0002 / CONTEXT.md), not built |
 | Fleet plane (provisioning, tenant/key registry, attestation verifier) | 📋 Designed (ADR-0001), not built |
 | Host-attestation gate | 📋 Designed; blocked on the TPM (discrete module on order) |

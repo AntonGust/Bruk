@@ -1,5 +1,33 @@
 # H100 bring-up status (`anton-bruk`, ssh ubuntu@77.87.121.15)
 
+## ✅ DONE (2026-07-02): the 24B serves CONFIDENTIALLY — ADR-0006 Part 2 executed
+
+**Mistral-Small-3.1-24B FP8 serves inside the SEV-SNP + CC-H100 guest at 97.6 tok/s single-stream
+(755 tok/s batched ×8) — ~2 % under the ~100 tok/s non-CC baseline** (the 12–15 % band measured on
+the 0.5B collapses as compute dominates PCIe bounce-buffer cost). Attestation suite re-run green on
+this config. Manifest: `manifests/h100-vllm-cc.yaml` (rewritten; the PVC/96Gi version it replaced
+never worked — see git history).
+
+- **Weights (~90 GB): block-encrypted emptyDir** (`emptydir_mode = "block-encrypted"`, the RFC-#247
+  feature, default-on in kata 3.29.0's CoCo runtimes): plain emptyDir → sparse `disk.img` on host
+  NVMe → virtio-scsi → **LUKS2 dm-crypt AEAD formatted in-guest with an ephemeral key**. Host sees
+  ciphertext only. First-run HF download into it; survives *container* restarts (a crash at min 14
+  resumed), lost on pod re-creation (by design). Cold start ~33 min, download-dominated.
+- **HF egress from the CC guest** needs the IPv4-first fix: `/etc/gai.conf` via ConfigMap
+  (`precedence ::ffff:0:0/96 100`) — the guest resolves IPv6-first with no v6 route.
+- **Image store (~35 GB unpacked): on `/dev/trusted_store`** (RFC #123; volumeMode:Block PVC that
+  the kata-agent LUKS2-formats in-guest and mounts over `/run/kata-containers/image` *before*
+  guest-pull). Backing: LVM LVs on the empty data NVMe (`manifests/trusted-storage.yaml`).
+  **Gotcha that cost a day: image-rs's default 3-way-parallel layer unpack consistently fails
+  against the store** ("Failed to unpack layer to destination", ~11 s in, ANY guest RAM size,
+  mirror or docker.io — while busybox, a 10 GB single-layer untar, and 293 MB/s sustained writes
+  all pass). Bisected to concurrency: **`max_concurrent_layer_downloads_per_image = 1` in the
+  initdata `[image]` section fixes it** (serial costs ~1 min on the LAN mirror; candidate upstream
+  bug to file). Result: smoke pod runs at **32Gi** (was 160Gi), 24B at **64Gi**, image bytes on
+  NVMe ciphertext.
+- Full mechanism/pattern analysis + what's NOT wired at these pins (dm-verity volumes, KBS keys):
+  ADR-0006 "Part 2 — EXECUTED" section.
+
 ## ✅ DONE (2026-07-02): Day-5 attestation VERIFIED + CC perf delta recorded (ADR-0004 steps 4–5)
 
 The confidential path is now *cryptographically proven*, not just "boots in SNP". Suite committed as

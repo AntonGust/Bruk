@@ -31,6 +31,12 @@ name = 'offline_fs_kbc'
 url = ''
 
 [image]
+# REQUIRED for /dev/trusted_store (image store on the encrypted block device): image-rs's default
+# 3-way-parallel layer download/unpack consistently fails against the ext4-on-LUKS2 store
+# ("Failed to unpack layer to destination", ~11s in, any guest RAM size) — serial pull works.
+# Found by bisection 2026-07-02 (kata 3.29.0 / guest-components de3f6ff); candidate upstream bug.
+# Cost via the LAN mirror: ~1 min on the 35GB image (~6.5 min to Ready vs ~5.5 parallel-into-RAM).
+max_concurrent_layer_downloads_per_image = 1
 
 [image.registry_config]
 unqualified-search-registries = ["docker.io"]

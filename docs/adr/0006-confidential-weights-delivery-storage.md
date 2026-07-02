@@ -90,12 +90,65 @@ docs — a documented gap.
 - **A small-model smoke test may brute-force guest RAM** to prove the path before the block-device work
   lands; that is explicitly a stopgap, recorded as such in `docs/h100-bringup-status.md`.
 
+## Part 2 — EXECUTED (2026-07-02): both storage walls solved on the pinned stack
+
+The decision above is implemented; the 24B serves confidentially. Findings from the pinned-source
+review (kata `3.29.0`, guest-components `de3f6ff`) + execution on `anton-bruk`:
+
+- **Weights (~90 GB): block-encrypted emptyDir** — RFC #247 shipped as kata PR #10559 (first in
+  3.28.0); `emptydir_mode = "block-encrypted"` is the *build-time default* for all CoCo runtime
+  configs in 3.29.0. A plain (non-`medium: Memory`) emptyDir becomes: sparse `disk.img` on host
+  NVMe → virtio-scsi hotplug → **LUKS2 dm-crypt with AEAD integrity (`hmac-sha256` + `aes-xts`)
+  formatted in-guest with a random per-mount key** (detached header on guest tmpfs) → ext4.
+  Host sees only ciphertext. Verified empirically before use. NVIDIA's own NIM-TEE CI test uses
+  exactly this for its model cache.
+- **Image store (~35 GB unpacked): `/dev/trusted_store`** — RFC #123 shipped as kata PR #9999.
+  A `volumeMode: Block` PVC attached at the magic devicePath `/dev/trusted_store` is LUKS2-
+  formatted in-guest (same ephemeral-key machinery) and mounted over `/run/kata-containers/image`
+  **before** guest-pull (`rpc.rs`: trusted-storage handling precedes `add_storages`). Retires the
+  160 Gi guest-RAM brute-force (smoke pod now 32 Gi; 24B 64 Gi). Upstream CI runs this shape on
+  `qemu-nvidia-gpu-snp` (`k8s-nvidia-nim.bats`). Size the PVC ≥ 2× image size. Backing: LVM LVs
+  on the empty data NVMe (`manifests/trusted-storage.yaml`).
+  **Hard-won gotcha:** image-rs's default **parallel layer unpack (3-way) reproducibly fails**
+  against the trusted store ("Failed to unpack layer to destination" ~11 s into the pull,
+  independent of guest RAM, mirror or upstream registry) while small/single-layer images and raw
+  bulk I/O all pass. Fix: **`max_concurrent_layer_downloads_per_image = 1`** in the initdata
+  `cdh.toml` `[image]` section (committed in `manifests/registry/initdata.toml`). Serial pull
+  costs ~1 min extra via the LAN mirror. Candidate upstream image-rs bug — file with the
+  reproduction (bisect log in `docs/h100-bringup-status.md`).
+- **Weights delivery decision: first-run HF download into the encrypted emptyDir** (simplest that
+  ships). Consequences accepted: weights re-download on every *pod* re-creation (~33 min cold
+  start, download-dominated; the volume DOES survive *container* restarts within the pod — a
+  crash at minute 14 resumed and completed). Pre-staged/verity-pinned delivery is the upgrade.
+- **Egress gotcha that bit (fix committed):** the CC guest resolves IPv6-first with no v6 route —
+  HF downloads die with `Network is unreachable`. Fix: `/etc/gai.conf` (`precedence
+  ::ffff:0:0/96 100`) via ConfigMap subPath (propagates fine into `shared_fs=none` guests).
+- **Result:** Mistral-Small-3.1-24B FP8 serves confidentially at **97.6 tok/s single-stream**
+  (batched ×8: 755 tok/s) vs ~100 tok/s non-CC — **~2 % overhead**, far under the 12–15 %
+  published band (the 0.5B measured 13.5 %: PCIe bounce-buffer cost shrinks relative to compute
+  as the model grows). Attestation suite re-run green on the final config.
+
+**Pattern status after Part 2:** what ships is *encrypted + integrity-protected ephemeral storage
+with in-guest ephemeral keys* — at-rest confidentiality on the host is actually **stronger** than
+plain Pattern-B dm-verity (which protects integrity, not confidentiality). What is still missing
+vs the full patterns, verified NOT wired at these pins: **dm-verity read-only pod volumes** (types
+exist in kata-types; no agent storage handler, no CDH plugin — the verity-pinned *provenance*
+half of Pattern B) and **KBS/`kbs://` key release for volumes** (CDH implements `sourceType:
+"encrypted"` + `kbs://` keys; the kata-agent only ever requests `empty`+ephemeral — so Pattern A
+stays roadmap). DIY escape hatch if RO-verified weights are wanted before an upgrade: attach a
+verity-formatted device as a plain `volumeDevices` path and run `veritysetup open` in-container —
+the Privatemode-proven pattern (needs cryptsetup + CAP_SYS_ADMIN in the image).
+
 ## Revisit triggers
 
-- **CoCo trusted image/ephemeral block storage reaches stable release** → move image cache + weights off
-  RAM onto the encrypted block device; retire the brute-force RAM stopgap.
+- ~~CoCo trusted image/ephemeral block storage reaches stable release~~ → **DONE 2026-07-02**
+  (both shipped in kata ≤3.29.0; see Part 2 above).
+- **Kata release wires dm-verity pod volumes or KBS-keyed secure mount into the agent** → adopt
+  for verity-pinned weights provenance (full Pattern B) / attested key release (Pattern A).
 - **Fleet-plane verifier / KBS exists** (with host attestation, post-fTPM) → implement Pattern A
-  (attested key release) for at-rest weight confidentiality.
+  (attested key release) for at-rest weight custody outside the box.
+- **Weights re-download cost becomes operationally painful** → pre-stage weights on a dedicated
+  block device (DIY verity or wait for the above), or add a persistent in-cluster HF cache.
 - **HGX B300 (Oct 2026)** → multi-GPU-in-one-TEE changes the topology; re-check the storage story then.
 
 ## References

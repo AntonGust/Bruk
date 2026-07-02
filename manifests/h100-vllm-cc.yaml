@@ -1,18 +1,38 @@
-# Confidential-serving variant of h100-vllm.yaml — ADR-0004 step 3.
+# Confidential serving of the REAL model (Mistral-Small-3.1-24B FP8) — ADR-0006 Part 2.
 #
-# Same workload (Mistral-Small-3.1-24B FP8), but runs inside a SEV-SNP confidential
-# guest (kata-qemu-nvidia-gpu-snp) against a GPU that's been flipped into CC SPT
-# mode (see docs/h100-bringup-status.md — GPU 81:00.0, via NVIDIA/gpu-admin-tools'
-# nvidia_gpu_tools.py --set-cc-mode=on, done surgically so the non-CC deployment
-# on GPU 21:00.0 (manifests/h100-vllm.yaml) is undisturbed).
+# How the two storage walls are solved on the pinned stack (kata 3.29.0, guest-components de3f6ff):
 #
-# Deployed alongside (not replacing) the non-CC deployment — the box has 2 H100s,
-# ADR-0005 confirms up to 2 concurrent confidential/non-CC guests is supported.
-# Reuses the same `vllm-models` PVC (RWO = single-node, not single-pod; both pods
-# are on the same single-node cluster) to skip re-downloading the ~90GB weights.
+#   WEIGHTS (the ~50GB HF download): a plain emptyDir. The SNP runtimes ship
+#   `emptydir_mode = "block-encrypted"` — a non-Memory emptyDir becomes a sparse disk.img on the
+#   host NVMe, hotplugged as virtio-scsi, dm-crypt(AEAD: hmac-sha256+aes-xts)-formatted INSIDE the
+#   guest with an ephemeral guest key, ext4. Host sees ciphertext only. Verified on this box
+#   2026-07-02 (bare SNP pod: /dev/mapper/<uuid> at the mountPoint, backing file in
+#   /var/lib/kubelet/.../empty-dir/, 3.5T sparse). NOT persistent — weights re-download on pod
+#   restart (accepted for the pilot; persistent secure volume = later, see ADR-0006).
 #
-# Prereq secret: same `hf-token` used by h100-vllm.yaml.
+#   IMAGE (~35GB unpacked): guest-pulled from the LOCAL MIRROR (ADR-0006 Part 1) onto
+#   /dev/trusted_store — a volumeMode:Block PVC (manifests/trusted-storage.yaml) the kata-agent
+#   LUKS2-formats in-guest (ephemeral key) and mounts over /run/kata-containers/image BEFORE the
+#   pull (RFC #123). Requires max_concurrent_layer_downloads_per_image=1 in the initdata (serial
+#   unpack — parallel unpack fails against the store; see manifests/registry/initdata.toml).
+#   This retires the image-in-RAM brute-force: memory drops 160Gi -> 64Gi.
 #
+#   HF EGRESS: the CC guest resolves IPv6-first but has no v6 route (verified 2026-07-02) →
+#   downloads would die with "Network is unreachable". Fix: /etc/gai.conf via ConfigMap
+#   (glibc IPv4-first; covers huggingface.co AND its dynamic CDN hostnames).
+#
+# Prereqs: hf-token secret (model is gated); registry mirror running + seeded (manifests/registry/).
+# Apply with initdata injected (NEVER hand-maintained):
+#   B64=$(bash manifests/registry/build-initdata.sh)
+#   sed "s|__INITDATA_B64__|$B64|" manifests/h100-vllm-cc.yaml | kubectl apply -f -
+#
+apiVersion: v1
+kind: ConfigMap
+metadata: { name: gai-ipv4-first }
+data:
+  gai.conf: |
+    precedence ::ffff:0:0/96 100
+---
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -26,11 +46,15 @@ spec:
   template:
     metadata:
       labels: { app: vllm-cc }
+      annotations:
+        # Redirects in-guest image-rs to the local mirror (base64(gzip(initdata.toml))).
+        io.katacontainers.config.hypervisor.cc_init_data: "__INITDATA_B64__"
     spec:
-      runtimeClassName: kata-qemu-nvidia-gpu-snp   # confidential guest (ADR-0004)
+      runtimeClassName: kata-qemu-nvidia-gpu-snp   # confidential guest + CC GPU
       containers:
         - name: vllm
-          image: vllm/vllm-openai:v0.11.1
+          # Same digest-pinned image as the smoke test — served by the local mirror.
+          image: docker.io/vllm/vllm-openai@sha256:d5b12dfb74d605615f8b29ebafaa52294c118bcac7bc9e941785c4108fdb913a
           args:
             - "--model=mistralai/Mistral-Small-3.1-24B-Instruct-2503"
             - "--served-model-name=mistral-small-3.1"
@@ -44,36 +68,41 @@ spec:
             - name: HF_TOKEN
               valueFrom: { secretKeyRef: { name: hf-token, key: token } }
             - name: VLLM_ATTENTION_BACKEND
-              value: "FLASH_ATTN"
+              value: "FLASH_ATTN"                  # FA3 on sm_90
           resources:
             limits:
               nvidia.com/pgpu: 1
-              # Confidential guest sizing is LARGER than the non-CC path (h100-vllm.yaml uses 32Gi):
-              # CC containers are "guest-pulled" — the ~13GiB (compressed, ~20-25GB unpacked) vLLM image
-              # is unpacked INSIDE the encrypted guest's RAM-backed tmpfs (default ceiling ~50% of guest
-              # RAM), NOT on host disk + virtiofs-shared like non-CC. 32Gi guest → ~20GB tmpfs → the
-              # image doesn't fit → "No space left on device" at container start. 96Gi → ~104GB guest
-              # (+8GB kata base) → ~52GB tmpfs ceiling, comfortably holds the unpacked image + runtime.
-              # Host has ~400GB free and only one CC pod runs, so this is safe. Model WEIGHTS are NOT
-              # counted here — they load into GPU VRAM from the virtiofs-mounted PVC, not guest RAM.
-              memory: 96Gi
+              # Image on /dev/trusted_store + weights on the encrypted emptyDir -> guest RAM
+              # only needs runtime + load buffers (24B FP8 online-quantize included).
+              memory: 64Gi
               cpu: "8"
             requests:
-              memory: 48Gi
+              memory: 32Gi
               cpu: "4"
           volumeMounts:
+            # Weights cache → block-encrypted emptyDir (dm-crypt on host NVMe, guest key).
             - { name: models, mountPath: /root/.cache/huggingface }
             - { name: dshm, mountPath: /dev/shm }
+            - { name: gai, mountPath: /etc/gai.conf, subPath: gai.conf }
+          volumeDevices:
+            # MAGIC path: kata-agent LUKS2-formats this in-guest and mounts it over
+            # /run/kata-containers/image before guest-pull (image store off RAM).
+            - { name: trusted-image, devicePath: /dev/trusted_store }
           readinessProbe:
             httpGet: { path: /health, port: 8000 }
             initialDelaySeconds: 60
             periodSeconds: 10
-            failureThreshold: 90
+            # Guest-pull (~5.5 min via mirror) + ~50GB HF download + FP8 quantize + CUDA graphs.
+            failureThreshold: 240
       volumes:
         - name: models
-          persistentVolumeClaim: { claimName: vllm-models }
+          emptyDir: {}                             # block-encrypted (emptydir_mode) — NOT medium:Memory
         - name: dshm
           emptyDir: { medium: Memory, sizeLimit: 8Gi }
+        - name: gai
+          configMap: { name: gai-ipv4-first }
+        - name: trusted-image
+          persistentVolumeClaim: { claimName: trusted-image-24b }
 ---
 apiVersion: v1
 kind: Service

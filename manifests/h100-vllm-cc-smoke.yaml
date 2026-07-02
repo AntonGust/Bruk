@@ -4,17 +4,17 @@
 # CC-mode H100, WITHOUT yet solving the production weights-delivery pipeline. This is a
 # capability check, not the production shape.
 #
-# Why it differs from h100-vllm-cc.yaml (the 24B attempt that hit the guest-storage wall):
-#   - Tiny model (Qwen2.5-0.5B-Instruct, Apache-2.0, ungated, ~1GB) so weights fit in the
-#     guest's RAM-backed ephemeral store and download fast — no HF token, no PVC.
-#   - NO PVC: confidential GPU guest is shared_fs="none" (no virtiofs), so a host PVC cannot
-#     be mounted. Weights download into the guest's ephemeral (RAM) storage instead.
-#   - memory: 160Gi. The vLLM image is ~13GiB compressed / ~35GB unpacked and is GUEST-PULLED
-#     into the guest's RAM-backed tmpfs (ceiling ~50% of guest RAM). At 32Gi it OOM'd in 2min;
-#     at 96Gi (~52GB tmpfs) it OOM'd at ~20min right near the finish. 160Gi -> ~168GB guest ->
-#     ~84GB tmpfs, comfortably holding the ~48GB (image compressed+unpacked) + tiny weights.
-#     Box has ~490GB free; one CC pod. THIS IS BRUTE-FORCE, not the production answer — the
-#     production fix is an attached encrypted/dm-verity block device (NVMe), see ADR-0006.
+# Why it differs from h100-vllm-cc.yaml (the production-shaped 24B):
+#   - Tiny model (Qwen2.5-0.5B-Instruct, Apache-2.0, ungated, ~1GB): no HF token, weights
+#     download fast into guest ephemeral storage.
+#   - NO weights volume needed: confidential GPU guest is shared_fs="none" (no virtiofs);
+#     the tiny weights just live in the guest.
+#
+# IMAGE STORE (2026-07-02, ADR-0006 Part 2): the ~35GB-unpacked vLLM image is guest-pulled
+# onto /dev/trusted_store — a volumeMode:Block PVC (manifests/trusted-storage.yaml) that the
+# kata-agent LUKS2-formats in-guest (ephemeral key) and mounts over /run/kata-containers/image
+# BEFORE the pull. memory therefore drops 160Gi -> 32Gi (the earlier 160Gi RAM-tmpfs
+# brute-force is retired; see git history of this file for that chapter).
 #
 apiVersion: apps/v1
 kind: Deployment
@@ -57,13 +57,17 @@ spec:
           resources:
             limits:
               nvidia.com/pgpu: 1
-              memory: 160Gi                          # fit the ~48GB guest-pulled image in RAM tmpfs
+              memory: 32Gi                           # image is on /dev/trusted_store, not RAM
               cpu: "8"
             requests:
-              memory: 64Gi
+              memory: 16Gi
               cpu: "4"
           volumeMounts:
             - { name: dshm, mountPath: /dev/shm }
+          volumeDevices:
+            # MAGIC path: kata-agent LUKS2-formats this in-guest and mounts it over
+            # /run/kata-containers/image before guest-pull (image store off RAM).
+            - { name: trusted-image, devicePath: /dev/trusted_store }
           readinessProbe:
             httpGet: { path: /health, port: 8000 }
             initialDelaySeconds: 60
@@ -72,6 +76,8 @@ spec:
       volumes:
         - name: dshm
           emptyDir: { medium: Memory, sizeLimit: 8Gi }
+        - name: trusted-image
+          persistentVolumeClaim: { claimName: trusted-image-smoke }
 ---
 apiVersion: v1
 kind: Service

@@ -115,6 +115,31 @@ chain + RIM/measurement match), and the same-model CC-vs-non-CC benchmark. Refer
 2026-07-02: all checks pass; CC overhead **13.5 %** single-stream / **10.8 %** batched
 (Qwen-0.5B). Re-run this suite after any storage/runtime/config change to the confidential path.
 
+## 7. The real model: confidential 24B with block-device storage (ADR-0006 Part 2)
+Storage prereqs (one-time): LVM LVs on the empty data NVMe + block PVs/PVCs, then the workload:
+```bash
+pvcreate /dev/nvme0n1 && vgcreate bruk /dev/nvme0n1          # host, one-time
+lvcreate -L 120G -n trusted-image-smoke bruk && lvcreate -L 150G -n trusted-image-24b bruk
+kubectl apply -f manifests/trusted-storage.yaml               # block PVs/PVCs (volumeMode: Block)
+kubectl create secret generic hf-token --from-literal=token=$HF_TOKEN   # model is gated
+B64=$(bash manifests/registry/build-initdata.sh)
+sed "s|__INITDATA_B64__|$B64|" manifests/h100-vllm-cc.yaml | kubectl apply -f -
+```
+How the storage works (details in ADR-0006 Part 2): the **image** guest-pulls onto
+`/dev/trusted_store` (block PVC → in-guest LUKS2, ephemeral key, mounted over the image store
+pre-pull — needs `max_concurrent_layer_downloads_per_image = 1`, already in `initdata.toml`);
+the **weights** (~90 GB) HF-download on first run into a **block-encrypted emptyDir** (dm-crypt
+AEAD on host NVMe). Both are ciphertext-only from the host; both die with the pod (weights
+re-download on pod re-creation ≈ 30 min — the accepted pilot trade-off).
+- **Verify — storage layout:** in-pod `df -h /` → ~117G overlay (the trusted-store LV, not tmpfs);
+  `grep huggingface /proc/mounts` → `/dev/mapper/<uuid>`; guest RAM (`free -g`) ≈ 64G not 160G.
+- **Verify — serves:** `/v1/models` → `mistral-small-3.1`. Reference: **97.6 tok/s** single-stream
+  warm / 755 tok/s batched ×8 (~2 % under the ~100 tok/s non-CC baseline). Cold start ~27–33 min
+  (download-dominated); image-only restart ~6.5 min.
+- **Gotchas:** HF egress needs the IPv4-first `gai.conf` ConfigMap (in the manifest — CC guests
+  resolve IPv6-first with no v6 route); one pod per trusted-store PVC (two pods LUKS-formatting
+  one LV = corruption); readiness `failureThreshold` is sized for the 30-min download.
+
 ---
 
 ## Reproducibility caveats

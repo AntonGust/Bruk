@@ -1,0 +1,73 @@
+# Trusted image storage for confidential guests — ADR-0006 Part 2 (RFC #123 mechanism).
+#
+# A volumeMode:Block PVC attached at the MAGIC devicePath /dev/trusted_store makes the
+# kata-agent (3.29.0) LUKS2-format the device IN-GUEST with a random ephemeral key
+# (detached header on guest tmpfs) and mount it over /run/kata-containers/image BEFORE
+# guest-pull — so the ~35GB unpacked vLLM image lands on NVMe ciphertext, not RAM tmpfs.
+# This retires the 160Gi guest-RAM brute-force. Host sees ciphertext only; contents are
+# unrecoverable after pod deletion (key is per-mount, by design — the image re-pulls from
+# the local mirror in ~minutes).
+#
+# Evidence (kata 3.29.0 / guest-components de3f6ff, pinned-source review 2026-07-02):
+#   - agent: src/agent/src/rpc.rs (cdh_handler_trusted_storage before add_storages;
+#     "block-device"+"luks2" secure mount of /run/kata-containers/image)
+#   - upstream CI runs this exact shape on qemu-nvidia-gpu-snp (k8s-nvidia-nim.bats)
+#   - docs/how-to/how-to-pull-images-in-guest-with-kata.md ("pulling large image in guest")
+# Size rule: PVC >= 2x image size (compressed layers + unpacked rootfs share the work dir).
+#
+# Host prereq (documented in RUNBOOK; nvme0n1 is the empty data NVMe on anton-bruk):
+#   pvcreate /dev/nvme0n1 && vgcreate bruk /dev/nvme0n1
+#   lvcreate -L 120G -n trusted-image-smoke bruk
+#   lvcreate -L 150G -n trusted-image-24b  bruk
+#
+apiVersion: v1
+kind: PersistentVolume
+metadata: { name: trusted-image-smoke }
+spec:
+  capacity: { storage: 120Gi }
+  accessModes: ["ReadWriteOnce"]
+  persistentVolumeReclaimPolicy: Retain
+  storageClassName: local-block
+  volumeMode: Block
+  local: { path: /dev/bruk/trusted-image-smoke }
+  nodeAffinity:
+    required:
+      nodeSelectorTerms:
+        - matchExpressions:
+            - { key: kubernetes.io/hostname, operator: In, values: [anton-bruk] }
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata: { name: trusted-image-smoke }
+spec:
+  accessModes: ["ReadWriteOnce"]
+  storageClassName: local-block
+  volumeMode: Block
+  volumeName: trusted-image-smoke
+  resources: { requests: { storage: 120Gi } }
+---
+apiVersion: v1
+kind: PersistentVolume
+metadata: { name: trusted-image-24b }
+spec:
+  capacity: { storage: 150Gi }
+  accessModes: ["ReadWriteOnce"]
+  persistentVolumeReclaimPolicy: Retain
+  storageClassName: local-block
+  volumeMode: Block
+  local: { path: /dev/bruk/trusted-image-24b }
+  nodeAffinity:
+    required:
+      nodeSelectorTerms:
+        - matchExpressions:
+            - { key: kubernetes.io/hostname, operator: In, values: [anton-bruk] }
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata: { name: trusted-image-24b }
+spec:
+  accessModes: ["ReadWriteOnce"]
+  storageClassName: local-block
+  volumeMode: Block
+  volumeName: trusted-image-24b
+  resources: { requests: { storage: 150Gi } }

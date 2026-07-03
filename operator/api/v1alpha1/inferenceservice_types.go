@@ -77,7 +77,11 @@ type EngineSpec struct {
 }
 
 // WorkloadResources sizes the workload pod. Platform-set: sizing is a
-// capacity function, not a customer decision.
+// capacity function, not a customer decision. Coarse ceilings (ADR-0008)
+// bound resource-exhaustion; they sit well above real workloads (the 24B uses
+// 64Gi / 8 CPU).
+// +kubebuilder:validation:XValidation:rule="quantity(self.memory.limit).compareTo(quantity('512Gi')) <= 0",message="resources.memory.limit must not exceed 512Gi"
+// +kubebuilder:validation:XValidation:rule="quantity(self.cpu.limit).compareTo(quantity('128')) <= 0",message="resources.cpu.limit must not exceed 128"
 type WorkloadResources struct {
 	// gpus is the nvidia.com/pgpu count. Capped at 1 in v1alpha1: single-GPU
 	// TEE (SPT) is the only validated CC topology; multi-GPU CC (PPCIE)

@@ -61,7 +61,18 @@ Mapping: manifest fields → CR fields are documented field-by-field in ADR-0007
 
 ## Delivery
 
-CI builds `ghcr.io/antongust/bruk-operator` (private). Release tags `operator/vX.Y.Z`
-push versioned images; deployment pins `tag@digest`. The operator ships as a Helm chart
-(`operator/dist/chart`) through a Flux `HelmRelease` sourced from this repo's existing
-`GitRepository` — see `gitops/helm/operator.yaml` (suspended until cluster rollout).
+CI builds `ghcr.io/antongust/bruk-operator` (**public** — ADR-0008: the image is public
+software with no secrets or private config baked in; no pull secret needed). Release tags
+`operator/vX.Y.Z` push versioned images; deployment pins `tag@digest`. The operator ships
+as a Helm chart (`operator/dist/chart`) through a Flux `HelmRelease` sourced from this
+repo's existing `GitRepository` — see `gitops/helm/operator.yaml` (suspended until cluster
+rollout).
+
+## Security posture
+
+See `docs/adr/0008-operator-security-posture.md`. In brief: least-privilege RBAC (the
+operator only reads its CR kinds + writes status; `secrets: get`-only, never reads the
+value); no secret/initdata-blob leakage into status or logs (status carries only a
+12-char hash); a single reviewed digest-pinned serving image (no per-workload override);
+no `env`/`args`/`extraArgs`/`hostPath`/`nodeSelector` passthrough; `runtimeClassName`
+fixed; supply-chain CI (govulncheck, Dependabot, SHA-pinned actions).

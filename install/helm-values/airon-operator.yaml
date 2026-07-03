@@ -1,11 +1,10 @@
 # Airon Operator values (consumed by gitops/helm/operator.yaml — SUSPENDED).
 # Image is pinned tag@digest (digest wins, tag stays readable) — printed by the
 # operator-release workflow's job summary on tag operator/vX.Y.Z.
-# ghcr.io/antongust/bruk-operator is PRIVATE: the ghcr-pull secret is created
-# out-of-band before unsuspending (see gitops/helm/operator.yaml header).
-imagePullSecrets:
-  - name: ghcr-pull
-
+# ghcr.io/antongust/bruk-operator is PUBLIC (ADR-0008): the operator image is
+# treated as public software (no secrets/config baked in, distroless + binary
+# only, RBAC-controlled at runtime), so no imagePullSecret is needed. Workload
+# and model secrets (hf-token) remain private.
 controllerManager:
   container:
     image:

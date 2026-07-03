@@ -7,13 +7,12 @@
 # object itself; the ghcr-pull secret is NOT required while suspended.
 #
 # UNSUSPEND CHECKLIST (a follow-up phase, one reviewed commit flipping suspend):
-#   1. Out-of-band pull secret (same pattern as hf-token — never in Git):
-#        kubectl create ns airon-operator-system
-#        kubectl -n airon-operator-system create secret docker-registry ghcr-pull \
-#          --docker-server=ghcr.io --docker-username=AntonGust \
-#          --docker-password=<PAT with read:packages>
+#   1. Release the image (tag operator/vX.Y.Z) and confirm the GHCR package
+#      ghcr.io/antongust/bruk-operator is PUBLIC + repo-linked (ADR-0008) — no
+#      pull secret is needed. (Workload/model secrets like hf-token stay private.)
 #   2. install/helm-values/airon-operator.yaml pins the released image BY DIGEST.
 #   3. Flip suspend below to false, commit, `flux reconcile ks bruk-helm`.
+#   (install.createNamespace below makes the target namespace; no manual step.)
 #
 # Chart comes from the EXISTING `bruk` GitRepository (read-only deploy key —
 # no new sources or credentials); reconcileStrategy Revision ships chart edits

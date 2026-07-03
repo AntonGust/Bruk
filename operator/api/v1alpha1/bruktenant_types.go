@@ -28,6 +28,9 @@ const BrukTenantName = "cluster"
 const (
 	ReasonValid              = "Valid"
 	ReasonTokenSecretMissing = "TokenSecretMissing"
+	// ReasonUnpinnedRevision is a non-fatal warning: the model is Ready but its
+	// HuggingFace revision is not pinned (weights may change after review).
+	ReasonUnpinnedRevision = "UnpinnedRevision"
 )
 
 // InfrastructureConfig describes the cluster's physical layout.

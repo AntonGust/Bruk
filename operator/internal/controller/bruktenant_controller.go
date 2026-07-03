@@ -38,9 +38,8 @@ type BrukTenantReconciler struct {
 	Scheme *runtime.Scheme
 }
 
-// +kubebuilder:rbac:groups=bruk.airon.ai,resources=bruktenants,verbs=get;list;watch;create;update;patch;delete
+// +kubebuilder:rbac:groups=bruk.airon.ai,resources=bruktenants,verbs=get;list;watch
 // +kubebuilder:rbac:groups=bruk.airon.ai,resources=bruktenants/status,verbs=get;update;patch
-// +kubebuilder:rbac:groups=bruk.airon.ai,resources=bruktenants/finalizers,verbs=update
 
 // Reconcile validates the cluster contract and records the result. It renders
 // no workloads in v1alpha1 — its value is observability: a stale or malformed

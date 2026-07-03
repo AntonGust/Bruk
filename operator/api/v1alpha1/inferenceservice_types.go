@@ -46,15 +46,12 @@ const (
 // EngineSpec configures the vLLM engine for one deployment. There is
 // deliberately no extraArgs escape hatch: the operator is deterministic
 // (ADR-0002) and free-form args would defeat the audited surface.
+//
+// There is also NO per-workload image field in v1alpha1 (ADR-0008): the
+// serving image is always BrukTenant.spec.engine.defaultImage — one reviewed,
+// digest-pinned path kept lockstep with the seeded mirror. Per-workload images,
+// if ever needed, return as an admin-only field / BrukEngineProfile.
 type EngineSpec struct {
-	// image is a digest-pinned vLLM image override. Defaults to
-	// BrukTenant.spec.engine.defaultImage. MUST be digest-pinned: the
-	// in-cluster mirror only serves seeded digests and image-rs verifies
-	// content by digest (manifests/registry/seed-job.yaml).
-	// +optional
-	// +kubebuilder:validation:Pattern=`^[^@]+@sha256:[a-f0-9]{64}$`
-	Image string `json:"image,omitempty"`
-
 	// quantization passed to vLLM (--quantization=).
 	// +optional
 	// +kubebuilder:validation:Enum=fp8
@@ -63,8 +60,11 @@ type EngineSpec struct {
 	// maxModelLen is the served context window (--max-model-len=). Required:
 	// it is a per-deployment capacity decision, and may be smaller than the
 	// model's native catalog.contextLength (the reconciler rejects larger).
+	// The schema maximum is a coarse ceiling; the reconciler enforces the
+	// tighter per-model contextLength bound.
 	// +required
 	// +kubebuilder:validation:Minimum=256
+	// +kubebuilder:validation:Maximum=1048576
 	MaxModelLen int32 `json:"maxModelLen"`
 
 	// gpuMemoryUtilizationPercent is rendered as
@@ -77,7 +77,11 @@ type EngineSpec struct {
 }
 
 // WorkloadResources sizes the workload pod. Platform-set: sizing is a
-// capacity function, not a customer decision.
+// capacity function, not a customer decision. Coarse ceilings (ADR-0008)
+// bound resource-exhaustion; they sit well above real workloads (the 24B uses
+// 64Gi / 8 CPU).
+// +kubebuilder:validation:XValidation:rule="quantity(self.memory.limit).compareTo(quantity('512Gi')) <= 0",message="resources.memory.limit must not exceed 512Gi"
+// +kubebuilder:validation:XValidation:rule="quantity(self.cpu.limit).compareTo(quantity('128')) <= 0",message="resources.cpu.limit must not exceed 128"
 type WorkloadResources struct {
 	// gpus is the nvidia.com/pgpu count. Capped at 1 in v1alpha1: single-GPU
 	// TEE (SPT) is the only validated CC topology; multi-GPU CC (PPCIE)

@@ -1,6 +1,6 @@
 # RUNBOOK — Confidential serving on the H100 box (reproduce from scratch)
 
-Sequences the whole confidential-serving path on the Bruk H100 box (`ubuntu@77.87.121.15`, node
+Sequences the whole confidential-serving path on the Bruk H100 box (`ubuntu@<build-box>`, node
 `anton-bruk`): from firmware to a model serving **inside a SEV-SNP guest with a CC-mode H100**, with the
 container image pulled from a **local registry mirror** (so guest-pull doesn't depend on docker.io).
 

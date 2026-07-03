@@ -1,4 +1,4 @@
-# H100 bring-up status (`anton-bruk`, ssh ubuntu@77.87.121.15)
+# H100 bring-up status (`anton-bruk`, ssh ubuntu@<build-box>)
 
 ## ✅ DONE (2026-07-02): the 24B serves CONFIDENTIALLY — ADR-0006 Part 2 executed
 

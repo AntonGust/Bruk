@@ -6,7 +6,7 @@
 # See docs/adr/0006-confidential-weights-delivery-storage.md and the plan.
 #
 # Exposure: ClusterIP ONLY — no hostNetwork, so nothing is exposed on the public node IP
-# (77.87.121.15). A registry:2 on hostNetwork would listen on all interfaces = unauth'd public
+# (<build-box>). A registry:2 on hostNetwork would listen on all interfaces = unauth'd public
 # registry; we deliberately avoid that. If the confidential guest turns out unable to reach a
 # ClusterIP (validated in the plan's Step 3.5), the documented fallback is a hostNetwork pod bound
 # to REGISTRY_HTTP_ADDR=10.0.0.216:5000 (internal cilium_host only) + an nftables drop on ens5f0:5000.

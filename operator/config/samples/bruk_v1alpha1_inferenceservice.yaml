@@ -1,0 +1,9 @@
+apiVersion: bruk.airon.ai/v1alpha1
+kind: InferenceService
+metadata:
+  labels:
+    app.kubernetes.io/name: airon-operator
+    app.kubernetes.io/managed-by: kustomize
+  name: inferenceservice-sample
+spec:
+  # TODO(user): Add fields here

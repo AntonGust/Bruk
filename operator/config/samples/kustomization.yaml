@@ -1,0 +1,6 @@
+## Append samples of your project ##
+resources:
+- bruk_v1alpha1_bruktenant.yaml
+- bruk_v1alpha1_brukmodel.yaml
+- bruk_v1alpha1_inferenceservice.yaml
+# +kubebuilder:scaffold:manifestskustomizesamples

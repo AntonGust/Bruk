@@ -1,0 +1,38 @@
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: manager-role
+rules:
+- apiGroups:
+  - bruk.airon.ai
+  resources:
+  - brukmodels
+  - bruktenants
+  - inferenceservices
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - bruk.airon.ai
+  resources:
+  - brukmodels/finalizers
+  - bruktenants/finalizers
+  - inferenceservices/finalizers
+  verbs:
+  - update
+- apiGroups:
+  - bruk.airon.ai
+  resources:
+  - brukmodels/status
+  - bruktenants/status
+  - inferenceservices/status
+  verbs:
+  - get
+  - patch
+  - update

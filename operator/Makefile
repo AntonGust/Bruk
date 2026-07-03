@@ -63,6 +63,17 @@ vet: ## Run go vet against code.
 test: manifests generate fmt vet setup-envtest ## Run tests.
 	KUBEBUILDER_ASSETS="$(shell "$(ENVTEST)" use $(ENVTEST_K8S_VERSION) --bin-dir "$(LOCALBIN)" -p path)" go test $$(go list ./... | grep -v /e2e) -coverprofile cover.out
 
+# Minimum coverage over api/ + internal/ (generated files excluded); e2e and cmd wiring
+# are out of scope. The gate is never lowered — only sequenced (docs/plan: Phase 3.2).
+COVERAGE_MIN ?= 80
+.PHONY: test-coverage
+test-coverage: test ## Run tests and enforce the coverage gate.
+	@head -1 cover.out > cover.filtered.out
+	@grep -E '(/api/|/internal/)' cover.out | grep -vE 'zz_generated|groupversion_info' >> cover.filtered.out
+	@go tool cover -func=cover.filtered.out | awk -v min=$(COVERAGE_MIN) \
+		'/^total:/ { sub(/%/,"",$$3); if ($$3+0 < min) { printf "FAIL: coverage %.1f%% < %d%%\n", $$3, min; exit 1 } \
+		else printf "OK: coverage %.1f%% (min %d%%)\n", $$3, min }'
+
 # TODO(user): To use a different vendor for e2e tests, modify the setup under 'tests/e2e'.
 # The default setup assumes Kind is pre-installed and builds/loads the Manager Docker image locally.
 # kubectl kuberc is disabled by default for test isolation; enable with:

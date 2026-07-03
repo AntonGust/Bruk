@@ -1,135 +1,47 @@
-# airon-operator
-// TODO(user): Add simple overview of use/purpose
+# Airon Operator
 
-## Description
-// TODO(user): An in-depth paragraph about your project and overview of use
+A **deterministic** Kubernetes operator (Go + controller-runtime, ADR-0002) that reconciles
+Bruk's customer-facing CRDs into the confidential vLLM serving stack:
 
-## Getting Started
+| Kind (`bruk.airon.ai/v1alpha1`) | Scope | Role |
+|---|---|---|
+| `BrukTenant` | cluster (singleton `cluster`) | Per-cluster platform config: node, storage VG, default engine image, initdata blob |
+| `BrukModel` | namespaced | Model identity + OpenRouter-style catalog metadata |
+| `InferenceService` | namespaced | One confidential vLLM endpoint serving a BrukModel |
 
-### Prerequisites
-- go version v1.24.6+
-- docker version 17.03+.
-- kubectl version v1.11.3+.
-- Access to a Kubernetes v1.11.3+ cluster.
+The operator renders exactly what the hand-written manifests do today
+(`manifests/h100-vllm-cc-smoke.yaml`, `manifests/h100-vllm-cc.yaml`) — golden tests in
+`internal/render` enforce that contract. No LLM in the loop; every change flows through
+Git/Flux (see `docs/adr/0002-airon-operator-is-deterministic.md`).
 
-### To Deploy on the cluster
-**Build and push your image to the location specified by `IMG`:**
+## Development
 
-```sh
-make docker-build docker-push IMG=<some-registry>/airon-operator:tag
-```
-
-**NOTE:** This image ought to be published in the personal registry you specified.
-And it is required to have access to pull the image from the working environment.
-Make sure you have the proper permission to the registry if the above commands don’t work.
-
-**Install the CRDs into the cluster:**
+Toolchain (see `docs/plan-2026-07.md` Phase 3.2): Go 1.26.x, kubebuilder v4.15,
+kind v0.32 (+ `kindest/node:v1.35.5` — matches the k3s v1.35.5 reference cluster),
+envtest pinned to 1.35.0 in the Makefile.
 
 ```sh
-make install
+make test            # envtest unit/integration suite
+make test-coverage   # same + coverage gate (>= 80% over api/ + internal/, generated files excluded)
+make lint            # golangci-lint
+make test-e2e        # kind-based e2e (creates/deletes a kind cluster)
 ```
 
-**Deploy the Manager to the cluster with the image specified by `IMG`:**
+## Review contract (code review before merge)
 
-```sh
-make deploy IMG=<some-registry>/airon-operator:tag
-```
+Everything under `operator/**` and `.github/workflows/operator-*` lands through a
+**pull request** with the `operator-ci` checks green (lint, test + coverage gate, e2e,
+image). Self-review of the full diff plus an AI-assisted review pass; findings are
+addressed in the PR. Direct pushes to `main` remain for the established
+infra/docs/gitops workflow and are **never** used for operator code. Note: GitHub-side
+enforcement (branch ruleset) requires GitHub Pro on private repos — until the plan is
+upgraded or the repo goes public, this contract is discipline, not machinery. The
+stakes are real either way: Flux consumes `main` directly (`gitops/gotk-sync.yaml`),
+so the PR gate also protects the live cluster's config source.
 
-> **NOTE**: If you encounter RBAC errors, you may need to grant yourself cluster-admin
-privileges or be logged in as admin.
+## Delivery
 
-**Create instances of your solution**
-You can apply the samples (examples) from the config/sample:
-
-```sh
-kubectl apply -k config/samples/
-```
-
->**NOTE**: Ensure that the samples has default values to test it out.
-
-### To Uninstall
-**Delete the instances (CRs) from the cluster:**
-
-```sh
-kubectl delete -k config/samples/
-```
-
-**Delete the APIs(CRDs) from the cluster:**
-
-```sh
-make uninstall
-```
-
-**UnDeploy the controller from the cluster:**
-
-```sh
-make undeploy
-```
-
-## Project Distribution
-
-Following the options to release and provide this solution to the users.
-
-### By providing a bundle with all YAML files
-
-1. Build the installer for the image built and published in the registry:
-
-```sh
-make build-installer IMG=<some-registry>/airon-operator:tag
-```
-
-**NOTE:** The makefile target mentioned above generates an 'install.yaml'
-file in the dist directory. This file contains all the resources built
-with Kustomize, which are necessary to install this project without its
-dependencies.
-
-2. Using the installer
-
-Users can just run 'kubectl apply -f <URL for YAML BUNDLE>' to install
-the project, i.e.:
-
-```sh
-kubectl apply -f https://raw.githubusercontent.com/<org>/airon-operator/<tag or branch>/dist/install.yaml
-```
-
-### By providing a Helm Chart
-
-1. Build the chart using the optional helm plugin
-
-```sh
-kubebuilder edit --plugins=helm/v2-alpha
-```
-
-2. See that a chart was generated under 'dist/chart', and users
-can obtain this solution from there.
-
-**NOTE:** If you change the project, you need to update the Helm Chart
-using the same command above to sync the latest changes. Furthermore,
-if you create webhooks, you need to use the above command with
-the '--force' flag and manually ensure that any custom configuration
-previously added to 'dist/chart/values.yaml' or 'dist/chart/manager/manager.yaml'
-is manually re-applied afterwards.
-
-## Contributing
-// TODO(user): Add detailed information on how you would like others to contribute to this project
-
-**NOTE:** Run `make help` for more information on all potential `make` targets
-
-More information can be found via the [Kubebuilder Documentation](https://book.kubebuilder.io/introduction.html)
-
-## License
-
-Copyright 2026.
-
-Licensed under the Apache License, Version 2.0 (the "License");
-you may not use this file except in compliance with the License.
-You may obtain a copy of the License at
-
-    http://www.apache.org/licenses/LICENSE-2.0
-
-Unless required by applicable law or agreed to in writing, software
-distributed under the License is distributed on an "AS IS" BASIS,
-WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-See the License for the specific language governing permissions and
-limitations under the License.
-
+CI builds `ghcr.io/antongust/bruk-operator` (private). Release tags `operator/vX.Y.Z`
+push versioned images; deployment pins `tag@digest`. The operator ships as a Helm chart
+(`operator/dist/chart`) through a Flux `HelmRelease` sourced from this repo's existing
+`GitRepository` — see `gitops/helm/operator.yaml` (suspended until cluster rollout).

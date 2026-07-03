@@ -46,15 +46,12 @@ const (
 // EngineSpec configures the vLLM engine for one deployment. There is
 // deliberately no extraArgs escape hatch: the operator is deterministic
 // (ADR-0002) and free-form args would defeat the audited surface.
+//
+// There is also NO per-workload image field in v1alpha1 (ADR-0008): the
+// serving image is always BrukTenant.spec.engine.defaultImage — one reviewed,
+// digest-pinned path kept lockstep with the seeded mirror. Per-workload images,
+// if ever needed, return as an admin-only field / BrukEngineProfile.
 type EngineSpec struct {
-	// image is a digest-pinned vLLM image override. Defaults to
-	// BrukTenant.spec.engine.defaultImage. MUST be digest-pinned: the
-	// in-cluster mirror only serves seeded digests and image-rs verifies
-	// content by digest (manifests/registry/seed-job.yaml).
-	// +optional
-	// +kubebuilder:validation:Pattern=`^[^@]+@sha256:[a-f0-9]{64}$`
-	Image string `json:"image,omitempty"`
-
 	// quantization passed to vLLM (--quantization=).
 	// +optional
 	// +kubebuilder:validation:Enum=fp8
@@ -63,8 +60,11 @@ type EngineSpec struct {
 	// maxModelLen is the served context window (--max-model-len=). Required:
 	// it is a per-deployment capacity decision, and may be smaller than the
 	// model's native catalog.contextLength (the reconciler rejects larger).
+	// The schema maximum is a coarse ceiling; the reconciler enforces the
+	// tighter per-model contextLength bound.
 	// +required
 	// +kubebuilder:validation:Minimum=256
+	// +kubebuilder:validation:Maximum=1048576
 	MaxModelLen int32 `json:"maxModelLen"`
 
 	// gpuMemoryUtilizationPercent is rendered as

@@ -318,21 +318,17 @@ func TestRenderProdWorkloadMatchesGoldenManifest(t *testing.T) {
 	}
 }
 
-func TestRenderImageOverrideWinsOverDefault(t *testing.T) {
-	// Arrange
-	override := "docker.io/vllm/vllm-openai@sha256:" + strings.Repeat("ab", 32)
-	isvc := smokeService()
-	isvc.Spec.Engine.Image = override
-
+func TestRenderUsesTenantDefaultImage(t *testing.T) {
+	// Arrange: v1alpha1 has no per-workload override; the tenant default wins.
 	// Act
-	rendered, err := render.Deployment(isvc, smokeModel(), testConfig())
+	rendered, err := render.Deployment(smokeService(), smokeModel(), testConfig())
 	if err != nil {
 		t.Fatalf("rendering deployment: %v", err)
 	}
 
 	// Assert
-	if got := rendered.Spec.Template.Spec.Containers[0].Image; got != override {
-		t.Errorf("image = %q, want override %q", got, override)
+	if got := rendered.Spec.Template.Spec.Containers[0].Image; got != testVLLMImage {
+		t.Errorf("image = %q, want tenant default %q", got, testVLLMImage)
 	}
 }
 

@@ -1,6 +1,7 @@
 # Reproduces manifests/h100-vllm-cc-smoke.yaml exactly (golden tests enforce it):
 # Deployment vllm-cc-smoke + Service vllm-cc-smoke-svc.
-# - engine.image omitted -> BrukTenant.spec.engine.defaultImage
+# - serving image is always BrukTenant.spec.engine.defaultImage (no per-workload
+#   image field in v1alpha1 — ADR-0008)
 # - weightsCache omitted -> no HF cache mount, no gai.conf, readiness threshold 120
 apiVersion: bruk.airon.ai/v1alpha1
 kind: InferenceService

@@ -65,20 +65,15 @@ spec:
                     maximum: 99
                     minimum: 1
                     type: integer
-                  image:
-                    description: |-
-                      image is a digest-pinned vLLM image override. Defaults to
-                      BrukTenant.spec.engine.defaultImage. MUST be digest-pinned: the
-                      in-cluster mirror only serves seeded digests and image-rs verifies
-                      content by digest (manifests/registry/seed-job.yaml).
-                    pattern: ^[^@]+@sha256:[a-f0-9]{64}$
-                    type: string
                   maxModelLen:
                     description: |-
                       maxModelLen is the served context window (--max-model-len=). Required:
                       it is a per-deployment capacity decision, and may be smaller than the
                       model's native catalog.contextLength (the reconciler rejects larger).
+                      The schema maximum is a coarse ceiling; the reconciler enforces the
+                      tighter per-model contextLength bound.
                     format: int32
+                    maximum: 1048576
                     minimum: 256
                     type: integer
                   quantization:

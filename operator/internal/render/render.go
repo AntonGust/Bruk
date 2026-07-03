@@ -83,16 +83,14 @@ func ServiceName(isvc *brukv1alpha1.InferenceService) string {
 	return isvc.Name + "-svc"
 }
 
-// ResolveImage returns the digest-pinned image for the workload: the
-// InferenceService override when set, the cluster default otherwise.
-func ResolveImage(isvc *brukv1alpha1.InferenceService, cfg Config) (string, error) {
-	if isvc.Spec.Engine.Image != "" {
-		return isvc.Spec.Engine.Image, nil
-	}
+// ResolveImage returns the digest-pinned serving image. v1alpha1 has a single
+// reviewed image path — BrukTenant.spec.engine.defaultImage (ADR-0008); there
+// is no per-workload override.
+func ResolveImage(_ *brukv1alpha1.InferenceService, cfg Config) (string, error) {
 	if cfg.DefaultImage != "" {
 		return cfg.DefaultImage, nil
 	}
-	return "", fmt.Errorf("no engine image: neither spec.engine.image nor the tenant defaultImage is set")
+	return "", fmt.Errorf("no engine image: BrukTenant.spec.engine.defaultImage is not set")
 }
 
 // Deployment renders the confidential vLLM Deployment for an InferenceService

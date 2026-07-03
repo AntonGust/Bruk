@@ -41,7 +41,7 @@ WorkloadAvailable=False` — no GPU/kata in kind, by design), `helm lint` clean.
 
 ## Box baseline (unchanged this session)
 
-`ssh ubuntu@77.87.121.15`, **kubectl needs sudo** (k3s root kubeconfig). Confirmed still
+`ssh ubuntu@<build-box>`, **kubectl needs sudo** (k3s root kubeconfig). Confirmed still
 Running: `registry`, `vllm-cc` (24B), `vllm-cc-smoke`, all Flux controllers. No
 `airon-operator-system` namespace. The hand-written workloads were **not touched**.
 

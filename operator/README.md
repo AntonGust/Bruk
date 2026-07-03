@@ -32,12 +32,12 @@ make test-e2e        # kind-based e2e (creates/deletes a kind cluster)
 Everything under `operator/**` and `.github/workflows/operator-*` lands through a
 **pull request** with the `operator-ci` checks green (lint, test + coverage gate, e2e,
 image). Self-review of the full diff plus an AI-assisted review pass; findings are
-addressed in the PR. Direct pushes to `main` remain for the established
-infra/docs/gitops workflow and are **never** used for operator code. Note: GitHub-side
-enforcement (branch ruleset) requires GitHub Pro on private repos — until the plan is
-upgraded or the repo goes public, this contract is discipline, not machinery. The
-stakes are real either way: Flux consumes `main` directly (`gitops/gotk-sync.yaml`),
-so the PR gate also protects the live cluster's config source.
+addressed in the PR. This is enforced by a GitHub **ruleset on `main`**
+(`main-requires-pr-and-operator-ci`): pull request required, status checks `changes` /
+`lint` / `test` / `e2e` / `image` must pass, with a repo-admin bypass reserved for the
+established infra/docs/gitops direct-push workflow — **never** used for operator code.
+The stakes are real: Flux consumes `main` directly (`gitops/gotk-sync.yaml`), so the
+PR gate also protects the live cluster's config source.
 
 ## Adopting the hand-written workloads (future cutover, per workload)
 

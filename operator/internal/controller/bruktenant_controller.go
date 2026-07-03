@@ -18,13 +18,18 @@ package controller
 
 import (
 	"context"
+	"encoding/base64"
+	"fmt"
 
+	"k8s.io/apimachinery/pkg/api/meta"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 
 	brukv1alpha1 "github.com/AntonGust/Bruk/operator/api/v1alpha1"
+	"github.com/AntonGust/Bruk/operator/internal/render"
 )
 
 // BrukTenantReconciler reconciles a BrukTenant object
@@ -37,21 +42,51 @@ type BrukTenantReconciler struct {
 // +kubebuilder:rbac:groups=bruk.airon.ai,resources=bruktenants/status,verbs=get;update;patch
 // +kubebuilder:rbac:groups=bruk.airon.ai,resources=bruktenants/finalizers,verbs=update
 
-// Reconcile is part of the main kubernetes reconciliation loop which aims to
-// move the current state of the cluster closer to the desired state.
-// TODO(user): Modify the Reconcile function to compare the state specified by
-// the BrukTenant object against the actual cluster state, and then
-// perform operations to make the cluster state reflect the state specified by
-// the user.
-//
-// For more details, check Reconcile and its Result here:
-// - https://pkg.go.dev/sigs.k8s.io/controller-runtime@v0.24.1/pkg/reconcile
+// Reconcile validates the cluster contract and records the result. It renders
+// no workloads in v1alpha1 — its value is observability: a stale or malformed
+// initdata blob is the one misconfiguration that rolls every CC pod on the
+// cluster, so `kubectl get bt` must answer "is the cluster config sane".
 func (r *BrukTenantReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	_ = logf.FromContext(ctx)
 
-	// TODO(user): your logic here
+	tenant := &brukv1alpha1.BrukTenant{}
+	if err := r.Get(ctx, req.NamespacedName, tenant); err != nil {
+		return ctrl.Result{}, client.IgnoreNotFound(err)
+	}
 
-	return ctrl.Result{}, nil
+	status := metav1.ConditionTrue
+	reason := brukv1alpha1.ReasonValid
+	message := "cluster contract is valid"
+	if err := validateInitData(tenant.Spec.Confidential.InitDataB64); err != nil {
+		status = metav1.ConditionFalse
+		reason = brukv1alpha1.ReasonInvalidConfig
+		message = fmt.Sprintf("initDataB64 invalid: %v (expected base64(gzip(initdata.toml)) from build-initdata.sh; an unsubstituted ${INITDATA_B64} placeholder fails CRD validation earlier)", err)
+	}
+
+	meta.SetStatusCondition(&tenant.Status.Conditions, metav1.Condition{
+		Type:               "Ready",
+		Status:             status,
+		Reason:             reason,
+		Message:            message,
+		ObservedGeneration: tenant.Generation,
+	})
+	tenant.Status.AppliedInitDataHash = render.InitDataHash(tenant.Spec.Confidential.InitDataB64)
+	tenant.Status.ObservedGeneration = tenant.Generation
+	return ctrl.Result{}, r.Status().Update(ctx, tenant)
+}
+
+// validateInitData checks the blob is base64-decodable gzip — the format the
+// kata-agent requires (plain base64 of the TOML fails in-guest with a gzip
+// header error, 20 minutes into a pod start, with empty logs).
+func validateInitData(blob string) error {
+	raw, err := base64.StdEncoding.DecodeString(blob)
+	if err != nil {
+		return fmt.Errorf("not valid base64: %w", err)
+	}
+	if len(raw) < 2 || raw[0] != 0x1f || raw[1] != 0x8b {
+		return fmt.Errorf("decoded payload is not gzip (missing 1f 8b magic)")
+	}
+	return nil
 }
 
 // SetupWithManager sets up the controller with the Manager.

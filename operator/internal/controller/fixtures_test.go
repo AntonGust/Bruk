@@ -91,3 +91,7 @@ func ptrQuantity(s string) *resource.Quantity {
 	q := resource.MustParse(s)
 	return &q
 }
+
+func mustQ(s string) resource.Quantity {
+	return resource.MustParse(s)
+}

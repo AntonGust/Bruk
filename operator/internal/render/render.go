@@ -21,6 +21,8 @@ limitations under the License.
 package render
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
 
 	appsv1 "k8s.io/api/apps/v1"
@@ -199,6 +201,14 @@ func GaiConfigMap(namespace string) *corev1.ConfigMap {
 // EndpointURL returns the cluster-internal OpenAI-compatible base URL.
 func EndpointURL(isvc *brukv1alpha1.InferenceService) string {
 	return fmt.Sprintf("http://%s.%s.svc.cluster.local:%d/v1", ServiceName(isvc), isvc.Namespace, servingPort)
+}
+
+// InitDataHash returns a short sha256 of the initdata blob so humans can
+// correlate "why did my pods roll" across BrukTenant and InferenceService
+// statuses without diffing multi-KB annotations.
+func InitDataHash(initDataB64 string) string {
+	sum := sha256.Sum256([]byte(initDataB64))
+	return hex.EncodeToString(sum[:])[:12]
 }
 
 func engineArgs(isvc *brukv1alpha1.InferenceService, model *brukv1alpha1.BrukModel) []string {

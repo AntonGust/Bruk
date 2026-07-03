@@ -22,6 +22,7 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	"k8s.io/apimachinery/pkg/api/errors"
+	apimeta "k8s.io/apimachinery/pkg/api/meta"
 	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
@@ -35,6 +36,7 @@ var _ = Describe("BrukModel Controller", func() {
 		const (
 			resourceName      = "test-resource"
 			resourceNamespace = "default"
+			gatedModelName    = "gated-model"
 		)
 
 		ctx := context.Background()
@@ -69,7 +71,7 @@ var _ = Describe("BrukModel Controller", func() {
 			By("Cleanup the specific resource instance BrukModel")
 			Expect(k8sClient.Delete(ctx, resource)).To(Succeed())
 		})
-		It("should successfully reconcile the resource", func() {
+		It("marks an ungated model Ready", func() {
 			By("Reconciling the created resource")
 			controllerReconciler := &BrukModelReconciler{
 				Client: k8sClient,
@@ -80,8 +82,38 @@ var _ = Describe("BrukModel Controller", func() {
 				NamespacedName: typeNamespacedName,
 			})
 			Expect(err).NotTo(HaveOccurred())
-			// TODO(user): Add more specific assertions depending on your controller's reconciliation logic.
-			// Example: If you expect a certain status condition after reconciliation, verify it here.
+
+			got := &brukv1alpha1.BrukModel{}
+			Expect(k8sClient.Get(ctx, typeNamespacedName, got)).To(Succeed())
+			ready := apimeta.FindStatusCondition(got.Status.Conditions, "Ready")
+			Expect(ready).To(HaveField("Status", metav1.ConditionTrue))
+			Expect(got.Status.ObservedGeneration).To(Equal(got.Generation))
+		})
+
+		It("marks a gated model with a missing token secret not Ready", func() {
+			gated := &brukv1alpha1.BrukModel{
+				ObjectMeta: metav1.ObjectMeta{Name: gatedModelName, Namespace: resourceNamespace},
+				Spec:       validModelSpec(),
+			}
+			gated.Spec.Source.HuggingFace.TokenSecretRef = &brukv1alpha1.SecretKeyRef{
+				Name: "no-such-secret", Key: "token",
+			}
+			Expect(k8sClient.Create(ctx, gated)).To(Succeed())
+
+			controllerReconciler := &BrukModelReconciler{
+				Client: k8sClient,
+				Scheme: k8sClient.Scheme(),
+			}
+			_, err := controllerReconciler.Reconcile(ctx, reconcile.Request{
+				NamespacedName: types.NamespacedName{Name: gatedModelName, Namespace: resourceNamespace},
+			})
+			Expect(err).NotTo(HaveOccurred())
+
+			got := &brukv1alpha1.BrukModel{}
+			Expect(k8sClient.Get(ctx, types.NamespacedName{Name: gatedModelName, Namespace: resourceNamespace}, got)).To(Succeed())
+			ready := apimeta.FindStatusCondition(got.Status.Conditions, "Ready")
+			Expect(ready).To(HaveField("Status", metav1.ConditionFalse))
+			Expect(ready).To(HaveField("Reason", brukv1alpha1.ReasonTokenSecretMissing))
 		})
 	})
 })

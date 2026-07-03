@@ -22,6 +22,8 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	"k8s.io/apimachinery/pkg/api/errors"
+	apimeta "k8s.io/apimachinery/pkg/api/meta"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
@@ -55,7 +57,7 @@ var _ = Describe("BrukTenant Controller", func() {
 			By("Cleanup the specific resource instance BrukTenant")
 			Expect(k8sClient.Delete(ctx, resource)).To(Succeed())
 		})
-		It("should successfully reconcile the resource", func() {
+		It("marks a valid cluster contract Ready and records the initdata hash", func() {
 			By("Reconciling the created resource")
 			controllerReconciler := &BrukTenantReconciler{
 				Client: k8sClient,
@@ -66,8 +68,34 @@ var _ = Describe("BrukTenant Controller", func() {
 				NamespacedName: typeNamespacedName,
 			})
 			Expect(err).NotTo(HaveOccurred())
-			// TODO(user): Add more specific assertions depending on your controller's reconciliation logic.
-			// Example: If you expect a certain status condition after reconciliation, verify it here.
+
+			got := &brukv1alpha1.BrukTenant{}
+			Expect(k8sClient.Get(ctx, typeNamespacedName, got)).To(Succeed())
+			ready := apimeta.FindStatusCondition(got.Status.Conditions, "Ready")
+			Expect(ready).To(HaveField("Status", metav1.ConditionTrue))
+			Expect(got.Status.AppliedInitDataHash).To(HaveLen(12))
+			Expect(got.Status.ObservedGeneration).To(Equal(got.Generation))
+		})
+
+		It("rejects a blob that is base64 but not gzip", func() {
+			got := &brukv1alpha1.BrukTenant{}
+			Expect(k8sClient.Get(ctx, typeNamespacedName, got)).To(Succeed())
+			got.Spec.Confidential.InitDataB64 = "bm90LWd6aXAtanVzdC1iYXNlNjQ="
+			Expect(k8sClient.Update(ctx, got)).To(Succeed())
+
+			controllerReconciler := &BrukTenantReconciler{
+				Client: k8sClient,
+				Scheme: k8sClient.Scheme(),
+			}
+			_, err := controllerReconciler.Reconcile(ctx, reconcile.Request{
+				NamespacedName: typeNamespacedName,
+			})
+			Expect(err).NotTo(HaveOccurred())
+
+			Expect(k8sClient.Get(ctx, typeNamespacedName, got)).To(Succeed())
+			ready := apimeta.FindStatusCondition(got.Status.Conditions, "Ready")
+			Expect(ready).To(HaveField("Status", metav1.ConditionFalse))
+			Expect(ready).To(HaveField("Reason", brukv1alpha1.ReasonInvalidConfig))
 		})
 	})
 })

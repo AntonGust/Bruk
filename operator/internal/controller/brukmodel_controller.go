@@ -18,8 +18,14 @@ package controller
 
 import (
 	"context"
+	"fmt"
 
+	corev1 "k8s.io/api/core/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/api/meta"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/types"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
@@ -36,22 +42,51 @@ type BrukModelReconciler struct {
 // +kubebuilder:rbac:groups=bruk.airon.ai,resources=brukmodels,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=bruk.airon.ai,resources=brukmodels/status,verbs=get;update;patch
 // +kubebuilder:rbac:groups=bruk.airon.ai,resources=brukmodels/finalizers,verbs=update
+// +kubebuilder:rbac:groups="",resources=secrets,verbs=get
 
-// Reconcile is part of the main kubernetes reconciliation loop which aims to
-// move the current state of the cluster closer to the desired state.
-// TODO(user): Modify the Reconcile function to compare the state specified by
-// the BrukModel object against the actual cluster state, and then
-// perform operations to make the cluster state reflect the state specified by
-// the user.
-//
-// For more details, check Reconcile and its Result here:
-// - https://pkg.go.dev/sigs.k8s.io/controller-runtime@v0.24.1/pkg/reconcile
+// Reconcile validates a BrukModel and records the result as a Ready
+// condition. Validation-only in v1alpha1: the workload belongs to
+// InferenceService. The token-secret presence check exists because the
+// alternative failure signal is a CC pod dying 20 minutes into start with
+// empty logs.
 func (r *BrukModelReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	_ = logf.FromContext(ctx)
 
-	// TODO(user): your logic here
+	model := &brukv1alpha1.BrukModel{}
+	if err := r.Get(ctx, req.NamespacedName, model); err != nil {
+		return ctrl.Result{}, client.IgnoreNotFound(err)
+	}
 
-	return ctrl.Result{}, nil
+	status := metav1.ConditionTrue
+	reason := brukv1alpha1.ReasonValid
+	message := "model spec is valid"
+
+	if ref := model.Spec.Source.HuggingFace.TokenSecretRef; ref != nil {
+		secret := &corev1.Secret{}
+		err := r.Get(ctx, types.NamespacedName{Name: ref.Name, Namespace: model.Namespace}, secret)
+		switch {
+		case apierrors.IsNotFound(err):
+			status = metav1.ConditionFalse
+			reason = brukv1alpha1.ReasonTokenSecretMissing
+			message = fmt.Sprintf("token Secret %q not found in namespace %s (delivered out-of-band, never in Git)", ref.Name, model.Namespace)
+		case err != nil:
+			return ctrl.Result{}, err
+		case len(secret.Data[ref.Key]) == 0:
+			status = metav1.ConditionFalse
+			reason = brukv1alpha1.ReasonTokenSecretMissing
+			message = fmt.Sprintf("token Secret %q has no key %q", ref.Name, ref.Key)
+		}
+	}
+
+	meta.SetStatusCondition(&model.Status.Conditions, metav1.Condition{
+		Type:               "Ready",
+		Status:             status,
+		Reason:             reason,
+		Message:            message,
+		ObservedGeneration: model.Generation,
+	})
+	model.Status.ObservedGeneration = model.Generation
+	return ctrl.Result{}, r.Status().Update(ctx, model)
 }
 
 // SetupWithManager sets up the controller with the Manager.

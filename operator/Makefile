@@ -70,7 +70,7 @@ COVERAGE_MIN ?= 80
 test-coverage: test ## Run tests and enforce the coverage gate.
 	@head -1 cover.out > cover.filtered.out
 	@grep -E '(/api/|/internal/)' cover.out | grep -vE 'zz_generated|groupversion_info' >> cover.filtered.out
-	@go tool cover -func=cover.filtered.out | awk -v min=$(COVERAGE_MIN) \
+	@go tool cover -func=cover.filtered.out | LC_ALL=C awk -v min=$(COVERAGE_MIN) \
 		'/^total:/ { sub(/%/,"",$$3); if ($$3+0 < min) { printf "FAIL: coverage %.1f%% < %d%%\n", $$3, min; exit 1 } \
 		else printf "OK: coverage %.1f%% (min %d%%)\n", $$3, min }'
 

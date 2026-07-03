@@ -1,0 +1,137 @@
+# CI for the Airon Operator (operator/ subdir). Monorepo pattern: no workflow-level
+# `paths:` filter — the `changes` job detects operator changes and every other job
+# skips when untouched. Skipped required checks count as passing, so docs/gitops-only
+# PRs are never blocked (see docs/plan Phase 3.2).
+name: operator-ci
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: operator-ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  changes:
+    runs-on: ubuntu-latest
+    outputs:
+      operator: ${{ steps.filter.outputs.operator }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dorny/paths-filter@v3
+        id: filter
+        with:
+          filters: |
+            operator:
+              - 'operator/**'
+              - '.github/workflows/operator-*.yml'
+
+  lint:
+    needs: changes
+    if: needs.changes.outputs.operator == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: operator/go.mod
+          cache-dependency-path: operator/go.sum
+      - name: Lint
+        working-directory: operator
+        run: make lint
+
+  test:
+    needs: changes
+    if: needs.changes.outputs.operator == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: operator/go.mod
+          cache-dependency-path: operator/go.sum
+      - name: Cache envtest binaries
+        uses: actions/cache@v4
+        with:
+          path: operator/bin/k8s
+          key: envtest-1.35.0-linux-amd64
+      - name: Test with coverage gate (>= 80%)
+        working-directory: operator
+        run: make test-coverage
+      - name: Upload coverage profile
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage
+          path: operator/cover.out
+          if-no-files-found: ignore
+
+  e2e:
+    needs: changes
+    if: needs.changes.outputs.operator == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: operator/go.mod
+          cache-dependency-path: operator/go.sum
+      - name: Install kind
+        run: |
+          curl -sLo "$RUNNER_TEMP/kind" https://kind.sigs.k8s.io/dl/v0.32.0/kind-linux-amd64
+          chmod +x "$RUNNER_TEMP/kind" && sudo mv "$RUNNER_TEMP/kind" /usr/local/bin/kind
+      - name: Run kind e2e (installs via the Helm chart)
+        working-directory: operator
+        run: make test-e2e
+      - name: Export kind logs on failure
+        if: failure()
+        run: kind export logs "$RUNNER_TEMP/kind-logs" --name airon-operator-test-e2e || true
+      - name: Upload kind logs
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: kind-logs
+          path: ${{ runner.temp }}/kind-logs
+          if-no-files-found: ignore
+
+  image:
+    needs: [changes, lint, test]
+    if: needs.changes.outputs.operator == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - name: Log in to ghcr.io
+        if: github.event_name == 'push'
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Image metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ghcr.io/antongust/bruk-operator
+          tags: |
+            type=sha,prefix=sha-
+            type=ref,event=branch
+      - name: Build (push only on main)
+        uses: docker/build-push-action@v6
+        with:
+          context: operator
+          push: ${{ github.event_name == 'push' }}
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max

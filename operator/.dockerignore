@@ -1,0 +1,17 @@
+# Denylist style (NOT the scaffolded `**` + `!**/*.go` allowlist): the legacy
+# docker builder mis-handles nested re-includes and silently drops cmd/main.go
+# from the build context, breaking `go build` inside the image.
+bin/
+dist/
+test/
+config/
+hack/
+*.out
+*.md
+.dockerignore
+Dockerfile
+Makefile
+PROJECT
+.golangci.yml
+.custom-gcl.yml
+.devcontainer/

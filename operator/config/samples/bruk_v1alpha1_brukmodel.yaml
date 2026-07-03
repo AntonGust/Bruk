@@ -1,0 +1,18 @@
+# The smoke-test model (slice 1): tiny, Apache-2.0, ungated — no tokenSecretRef.
+# servedName defaults to metadata.name -> --served-model-name=qwen-0.5b.
+apiVersion: bruk.airon.ai/v1alpha1
+kind: BrukModel
+metadata:
+  labels:
+    app.kubernetes.io/name: airon-operator
+    app.kubernetes.io/managed-by: kustomize
+  name: qwen-0.5b
+spec:
+  source:
+    huggingFace:
+      repo: Qwen/Qwen2.5-0.5B-Instruct
+  catalog:
+    displayName: "Qwen2.5 0.5B Instruct"
+    description: "Tiny Apache-2.0 instruct model used as the confidential-serving smoke workload."
+    contextLength: 32768
+    license: Apache-2.0

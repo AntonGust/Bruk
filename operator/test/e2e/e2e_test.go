@@ -25,6 +25,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"time"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -63,15 +64,19 @@ var _ = Describe("Manager", Ordered, func() {
 		_, err = utils.Run(cmd)
 		Expect(err).NotTo(HaveOccurred(), "Failed to label namespace with restricted policy")
 
-		By("installing CRDs")
-		cmd = exec.Command("make", "install")
+		// Deployed via the HELM CHART (not make deploy): the chart is what
+		// Flux ships to the real cluster, so e2e must exercise its RBAC,
+		// CRDs, and manager wiring — not the kustomize variant.
+		By("installing the operator via the Helm chart")
+		imageRepo, imageTag, found := strings.Cut(managerImage, ":")
+		Expect(found).To(BeTrue(), "managerImage must be repo:tag")
+		cmd = exec.Command("helm", "install", "airon-operator", "dist/chart",
+			"--namespace", namespace,
+			"--set", fmt.Sprintf("controllerManager.container.image.repository=%s", imageRepo),
+			"--set", fmt.Sprintf("controllerManager.container.image.tag=%s", imageTag),
+		)
 		_, err = utils.Run(cmd)
-		Expect(err).NotTo(HaveOccurred(), "Failed to install CRDs")
-
-		By("deploying the controller-manager")
-		cmd = exec.Command("make", "deploy", fmt.Sprintf("IMG=%s", managerImage))
-		_, err = utils.Run(cmd)
-		Expect(err).NotTo(HaveOccurred(), "Failed to deploy the controller-manager")
+		Expect(err).NotTo(HaveOccurred(), "Failed to helm-install the operator")
 	})
 
 	// After all tests have been executed, clean up by undeploying the controller, uninstalling CRDs,
@@ -81,12 +86,8 @@ var _ = Describe("Manager", Ordered, func() {
 		cmd := exec.Command("kubectl", "delete", "pod", "curl-metrics", "-n", namespace)
 		_, _ = utils.Run(cmd)
 
-		By("undeploying the controller-manager")
-		cmd = exec.Command("make", "undeploy")
-		_, _ = utils.Run(cmd)
-
-		By("uninstalling CRDs")
-		cmd = exec.Command("make", "uninstall")
+		By("uninstalling the Helm release (CRDs stay: helm.sh/resource-policy keep)")
+		cmd = exec.Command("helm", "uninstall", "airon-operator", "--namespace", namespace)
 		_, _ = utils.Run(cmd)
 
 		By("removing manager namespace")
@@ -269,16 +270,91 @@ var _ = Describe("Manager", Ordered, func() {
 		})
 
 		// +kubebuilder:scaffold:e2e-webhooks-checks
+	})
 
-		// TODO: Customize the e2e test suite with scenarios specific to your project.
-		// Consider applying sample/CR(s) and check their status and/or verifying
-		// the reconciliation by using the metrics, i.e.:
-		// metricsOutput, err := getMetricsOutput()
-		// Expect(err).NotTo(HaveOccurred(), "Failed to retrieve logs from curl pod")
-		// Expect(metricsOutput).To(ContainSubstring(
-		//    fmt.Sprintf(`controller_runtime_reconcile_total{controller="%s",result="success"} 1`,
-		//    strings.ToLower(<Kind>),
-		// ))
+	// The confidential workload cannot RUN in kind (no GPU, no kata, no SEV-SNP):
+	// the pods stay unschedulable by design. Assertions target OBJECT SPECS and
+	// CR STATUS only — Configured=True with WorkloadAvailable=False is the
+	// expected terminal state here, never Ready.
+	Context("confidential workload rendering (smoke-shape samples)", func() {
+		AfterAll(func() {
+			By("removing the sample CRs")
+			cmd := exec.Command("kubectl", "delete", "-k", "config/samples", "--ignore-not-found=true")
+			_, _ = utils.Run(cmd)
+		})
+
+		It("renders the workload from the sample CRs and reports honest status", func() {
+			By("applying the sample BrukTenant, BrukModel and InferenceService")
+			cmd := exec.Command("kubectl", "apply", "-k", "config/samples")
+			_, err := utils.Run(cmd)
+			Expect(err).NotTo(HaveOccurred(), "Failed to apply sample CRs")
+
+			By("waiting for the operator to render the Deployment (exercises live watches + RBAC)")
+			verifyDeployment := func(g Gomega) {
+				cmd := exec.Command("kubectl", "get", "deployment", "vllm-cc-smoke",
+					"-o", "jsonpath={.spec.template.spec.runtimeClassName}")
+				output, err := utils.Run(cmd)
+				g.Expect(err).NotTo(HaveOccurred())
+				g.Expect(output).To(Equal("kata-qemu-nvidia-gpu-snp"))
+			}
+			Eventually(verifyDeployment, 2*time.Minute).Should(Succeed())
+
+			By("verifying the Service exists with the app selector")
+			cmd = exec.Command("kubectl", "get", "service", "vllm-cc-smoke-svc",
+				"-o", "jsonpath={.spec.selector.app}")
+			output, err := utils.Run(cmd)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(output).To(Equal("vllm-cc-smoke"))
+
+			By("verifying the initdata annotation reached the pod template")
+			cmd = exec.Command("kubectl", "get", "deployment", "vllm-cc-smoke", "-o",
+				`jsonpath={.spec.template.metadata.annotations.io\.katacontainers\.config\.hypervisor\.cc_init_data}`)
+			output, err = utils.Run(cmd)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(output).NotTo(BeEmpty())
+
+			By("verifying status: Configured=True, WorkloadAvailable=False, Ready=False")
+			verifyStatus := func(g Gomega) {
+				cmd := exec.Command("kubectl", "get", "inferenceservice", "vllm-cc-smoke",
+					"-o", `jsonpath={.status.conditions[?(@.type=="Configured")].status} {.status.conditions[?(@.type=="WorkloadAvailable")].status} {.status.conditions[?(@.type=="Ready")].status}`)
+				output, err := utils.Run(cmd)
+				g.Expect(err).NotTo(HaveOccurred())
+				g.Expect(output).To(Equal("True False False"))
+			}
+			Eventually(verifyStatus, 2*time.Minute).Should(Succeed())
+
+			By("verifying the catalog-facing status fields")
+			cmd = exec.Command("kubectl", "get", "inferenceservice", "vllm-cc-smoke",
+				"-o", "jsonpath={.status.servedModelName} {.status.endpoint.url}")
+			output, err = utils.Run(cmd)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(output).To(Equal("qwen-0.5b http://vllm-cc-smoke-svc.default.svc.cluster.local:8000/v1"))
+
+			By("verifying the tenant reports Ready with the initdata hash")
+			cmd = exec.Command("kubectl", "get", "bruktenant", "cluster",
+				"-o", "jsonpath={.status.appliedInitDataHash}")
+			output, err = utils.Run(cmd)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(output).To(HaveLen(12))
+		})
+
+		It("garbage-collects children when the InferenceService is deleted", func() {
+			By("deleting the InferenceService")
+			cmd := exec.Command("kubectl", "delete", "inferenceservice", "vllm-cc-smoke")
+			_, err := utils.Run(cmd)
+			Expect(err).NotTo(HaveOccurred())
+
+			By("waiting for the owned Deployment and Service to be garbage-collected")
+			verifyGone := func(g Gomega) {
+				cmd := exec.Command("kubectl", "get", "deployment", "vllm-cc-smoke")
+				_, err := utils.Run(cmd)
+				g.Expect(err).To(HaveOccurred(), "Deployment should be garbage-collected")
+				cmd = exec.Command("kubectl", "get", "service", "vllm-cc-smoke-svc")
+				_, err = utils.Run(cmd)
+				g.Expect(err).To(HaveOccurred(), "Service should be garbage-collected")
+			}
+			Eventually(verifyGone, 2*time.Minute).Should(Succeed())
+		})
 	})
 })
 

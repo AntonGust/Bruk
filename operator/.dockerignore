@@ -1,11 +1,17 @@
-# More info: https://docs.docker.com/engine/reference/builder/#dockerignore-file
-# Ignore everything by default and re-include only needed files
-**
-
-# Re-include Go source files (but not *_test.go)
-!**/*.go
-**/*_test.go
-
-# Re-include Go module files
-!go.mod
-!go.sum
+# Denylist style (NOT the scaffolded `**` + `!**/*.go` allowlist): the legacy
+# docker builder mis-handles nested re-includes and silently drops cmd/main.go
+# from the build context, breaking `go build` inside the image.
+bin/
+dist/
+test/
+config/
+hack/
+*.out
+*.md
+.dockerignore
+Dockerfile
+Makefile
+PROJECT
+.golangci.yml
+.custom-gcl.yml
+.devcontainer/

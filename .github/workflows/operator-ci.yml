@@ -72,6 +72,35 @@ jobs:
           path: operator/cover.out
           if-no-files-found: ignore
 
+  e2e:
+    needs: changes
+    if: needs.changes.outputs.operator == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: operator/go.mod
+          cache-dependency-path: operator/go.sum
+      - name: Install kind
+        run: |
+          curl -sLo "$RUNNER_TEMP/kind" https://kind.sigs.k8s.io/dl/v0.32.0/kind-linux-amd64
+          chmod +x "$RUNNER_TEMP/kind" && sudo mv "$RUNNER_TEMP/kind" /usr/local/bin/kind
+      - name: Run kind e2e (installs via the Helm chart)
+        working-directory: operator
+        run: make test-e2e
+      - name: Export kind logs on failure
+        if: failure()
+        run: kind export logs "$RUNNER_TEMP/kind-logs" --name airon-operator-test-e2e || true
+      - name: Upload kind logs
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: kind-logs
+          path: ${{ runner.temp }}/kind-logs
+          if-no-files-found: ignore
+
   image:
     needs: [changes, lint, test]
     if: needs.changes.outputs.operator == 'true'

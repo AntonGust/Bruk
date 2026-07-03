@@ -74,6 +74,13 @@ test-coverage: test ## Run tests and enforce the coverage gate.
 		'/^total:/ { sub(/%/,"",$$3); if ($$3+0 < min) { printf "FAIL: coverage %.1f%% < %d%%\n", $$3, min; exit 1 } \
 		else printf "OK: coverage %.1f%% (min %d%%)\n", $$3, min }'
 
+# govulncheck version — Dependabot (.github/dependabot.yml) bumps the go.mod
+# tool line; pin here for reproducible CI.
+GOVULNCHECK_VERSION ?= v1.1.4
+.PHONY: vulncheck
+vulncheck: ## Scan for known vulnerabilities (Go stdlib + deps).
+	go run golang.org/x/vuln/cmd/govulncheck@$(GOVULNCHECK_VERSION) ./...
+
 # TODO(user): To use a different vendor for e2e tests, modify the setup under 'tests/e2e'.
 # The default setup assumes Kind is pre-installed and builds/loads the Manager Docker image locally.
 # kubectl kuberc is disabled by default for test isolation; enable with:

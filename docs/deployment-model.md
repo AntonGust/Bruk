@@ -78,7 +78,7 @@ each customer's dedicated cluster.
 | Confidential serving of a *large* (24B) model | ✅ Built (ADR-0006 Part 2 executed 2026-07-02: block storage, ~2 % CC overhead) |
 | GitOps/Flux — app layer (registry, storage, CC workloads) | ✅ Built (Phase 3.1 Stage A, 2026-07-02: `gitops/`, self-healing, prune) |
 | GitOps/Flux — Helm layer (Cilium/GPU Operator/kata-deploy as HelmReleases) | ✅ Built (Stage B, 2026-07-02: adopted no-op after values+manifest diff; M3 complete) |
-| Airon Operator + CRDs | 📋 Designed (ADR-0002 / CONTEXT.md), not built |
+| Airon Operator + CRDs | 🔨 Built & gated (Phase 3.2, 2026-07-03: `operator/`, ADR-0007; CI + 80% coverage + kind e2e green; ships as suspended HelmRelease — no cluster rollout yet) |
 | Fleet plane (provisioning, tenant/key registry, attestation verifier) | 📋 Designed (ADR-0001), not built |
 | Host-attestation gate | 📋 Designed; blocked on the TPM (discrete module on order) |
 

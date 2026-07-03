@@ -39,6 +39,26 @@ upgraded or the repo goes public, this contract is discipline, not machinery. Th
 stakes are real either way: Flux consumes `main` directly (`gitops/gotk-sync.yaml`),
 so the PR gate also protects the live cluster's config source.
 
+## Adopting the hand-written workloads (future cutover, per workload)
+
+The golden tests prove the operator renders exactly what `manifests/h100-vllm-cc-smoke.yaml` /
+`h100-vllm-cc.yaml` contain, so the cutover is a rename-level change — but it must be sequenced,
+because the one-pod-per-PVC guard refuses to render while the legacy Deployment still mounts the
+trusted-store claim (that's the LUKS double-format protection working):
+
+1. `flux suspend kustomization bruk-cluster` (stop Flux recreating the static manifest).
+2. Remove the workload's manifest from `manifests/kustomization.yaml`; delete the Deployment+Service
+   (`kubectl delete -f manifests/h100-vllm-cc-smoke.yaml` minus the PVC — the trusted-store PVC and
+   its data stay).
+3. Commit the BrukModel + InferenceService pair (see `config/samples/`) into the Flux-applied path;
+   `flux resume kustomization bruk-cluster`.
+4. The operator renders the identical Deployment/Service; the pod re-runs guest-pull onto the
+   existing store. Verify `Configured=True` then `Ready=True`, zero spec diff vs the old manifest.
+
+Mapping: manifest fields → CR fields are documented field-by-field in ADR-0007 and enforced by
+`internal/render` golden tests. The 24B follows the same steps with its own CR pair
+(`weightsCache: {}`, `tokenSecretRef: hf-token`).
+
 ## Delivery
 
 CI builds `ghcr.io/antongust/bruk-operator` (private). Release tags `operator/vX.Y.Z`

@@ -13,6 +13,7 @@ when a decision changes, the old ADR is marked **superseded** and points to its 
 | [0005](0005-h100-pilot-hardware.md) | H100 pilot hardware (2× H100 on EPYC 9224 Genoa) | ✅ accepted | Supersedes 0003 for H100; amends 0004's hardware context |
 | [0006](0006-confidential-weights-delivery-storage.md) | Confidential model delivery: attested storage on a block device; Bruk targets Pattern B; KBS is roadmap | ✅ accepted | Part 1 (registry mirror) done; Part 2 (block storage for 24B) pending |
 | [0007](0007-operator-v1alpha1-api-surface.md) | Operator v1alpha1 API surface: `bruk.airon.ai` CRDs, catalog-ready, CC-invisible | ✅ accepted | Phase 3.2; operator built + gated (suspended HelmRelease) |
+| [0008](0008-operator-security-posture.md) | Operator security posture: least-privilege RBAC, no secret/blob leakage, dropped image override, public image, resource caps, supply-chain CI | ✅ accepted | Post-Phase-3.2 hardening; audit outcome + future non-goals (admin RBAC, allowlist, webhook) |
 
 **Current pilot hardware = H100 (sm_90) on AMD EPYC 9224 Genoa** (ADR-0005). If an ADR talks about
 RTX PRO 6000 / sm_120 as if it were current, it's the pre-migration record — 0005 is the authority.

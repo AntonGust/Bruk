@@ -8,13 +8,27 @@ metadata:
 spec:
   group: bruk.airon.ai
   names:
+    categories:
+    - bruk
     kind: InferenceService
     listKind: InferenceServiceList
     plural: inferenceservices
+    shortNames:
+    - bsvc
     singular: inferenceservice
   scope: Namespaced
   versions:
-  - name: v1alpha1
+  - additionalPrinterColumns:
+    - jsonPath: .spec.modelRef.name
+      name: Model
+      type: string
+    - jsonPath: .status.conditions[?(@.type=="Ready")].status
+      name: Ready
+      type: string
+    - jsonPath: .status.endpoint.url
+      name: Endpoint
+      type: string
+    name: v1alpha1
     schema:
       openAPIV3Schema:
         description: InferenceService is the Schema for the inferenceservices API
@@ -39,25 +53,214 @@ spec:
           spec:
             description: spec defines the desired state of InferenceService
             properties:
-              foo:
-                description: foo is an example field of InferenceService. Edit inferenceservice_types.go
-                  to remove/update
-                type: string
+              engine:
+                description: engine configures vLLM.
+                properties:
+                  gpuMemoryUtilizationPercent:
+                    default: 90
+                    description: |-
+                      gpuMemoryUtilizationPercent is rendered as
+                      --gpu-memory-utilization=<n/100> (no floats in CRDs).
+                    format: int32
+                    maximum: 99
+                    minimum: 1
+                    type: integer
+                  image:
+                    description: |-
+                      image is a digest-pinned vLLM image override. Defaults to
+                      BrukTenant.spec.engine.defaultImage. MUST be digest-pinned: the
+                      in-cluster mirror only serves seeded digests and image-rs verifies
+                      content by digest (manifests/registry/seed-job.yaml).
+                    pattern: ^[^@]+@sha256:[a-f0-9]{64}$
+                    type: string
+                  maxModelLen:
+                    description: |-
+                      maxModelLen is the served context window (--max-model-len=). Required:
+                      it is a per-deployment capacity decision, and may be smaller than the
+                      model's native catalog.contextLength (the reconciler rejects larger).
+                    format: int32
+                    minimum: 256
+                    type: integer
+                  quantization:
+                    description: quantization passed to vLLM (--quantization=).
+                    enum:
+                    - fp8
+                    type: string
+                required:
+                - maxModelLen
+                type: object
+              modelRef:
+                description: |-
+                  modelRef names the BrukModel (same namespace) this service serves.
+                  Immutable: a service is an endpoint FOR a model; serving a different
+                  model is a new InferenceService.
+                properties:
+                  name:
+                    description: name of the referenced object.
+                    maxLength: 253
+                    minLength: 1
+                    type: string
+                required:
+                - name
+                type: object
+                x-kubernetes-validations:
+                - message: modelRef is immutable
+                  rule: self == oldSelf
+              probes:
+                description: probes tunes workload probes.
+                properties:
+                  readinessFailureThreshold:
+                    description: |-
+                      readinessFailureThreshold overrides the readiness failureThreshold.
+                      Defaults: 120 without weightsCache (guest-pull only), 240 with it
+                      (pull + weights download + quantize).
+                    format: int32
+                    maximum: 1000
+                    minimum: 1
+                    type: integer
+                type: object
+              resources:
+                description: resources sizes the workload pod.
+                properties:
+                  cpu:
+                    description: cpu limit/request for the container.
+                    properties:
+                      limit:
+                        anyOf:
+                        - type: integer
+                        - type: string
+                        description: limit for the resource.
+                        pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
+                        x-kubernetes-int-or-string: true
+                      request:
+                        anyOf:
+                        - type: integer
+                        - type: string
+                        description: request for the resource; defaults to limit when
+                          omitted.
+                        pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
+                        x-kubernetes-int-or-string: true
+                    required:
+                    - limit
+                    type: object
+                  gpus:
+                    default: 1
+                    description: |-
+                      gpus is the nvidia.com/pgpu count. Capped at 1 in v1alpha1: single-GPU
+                      TEE (SPT) is the only validated CC topology; multi-GPU CC (PPCIE)
+                      waits for HGX B300 hardware. Relaxing a maximum later is
+                      backward-compatible.
+                    format: int32
+                    maximum: 1
+                    minimum: 1
+                    type: integer
+                  memory:
+                    description: memory limit/request for the container.
+                    properties:
+                      limit:
+                        anyOf:
+                        - type: integer
+                        - type: string
+                        description: limit for the resource.
+                        pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
+                        x-kubernetes-int-or-string: true
+                      request:
+                        anyOf:
+                        - type: integer
+                        - type: string
+                        description: request for the resource; defaults to limit when
+                          omitted.
+                        pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
+                        x-kubernetes-int-or-string: true
+                    required:
+                    - limit
+                    type: object
+                required:
+                - cpu
+                - memory
+                type: object
+              storage:
+                description: storage configures the trusted store and optional weights
+                  cache.
+                properties:
+                  trustedStore:
+                    description: trustedStore is the block device for the confidential
+                      image store.
+                    properties:
+                      existingClaim:
+                        description: |-
+                          existingClaim names a pre-created volumeMode:Block PVC
+                          (manifests/trusted-storage.yaml). One workload per claim: a second
+                          consumer would LUKS-format the store again and corrupt it — the
+                          reconciler enforces this.
+                        type: string
+                      localVolume:
+                        description: |-
+                          localVolume asks the operator to create the PV/PVC pair from an LVM
+                          logical volume. Reserved in v1alpha1: the reconciler reports
+                          NotImplemented. LV creation itself stays host-plane either way.
+                        properties:
+                          lvName:
+                            description: |-
+                              lvName is the logical volume name inside
+                              BrukTenant.spec.infrastructure.storageVolumeGroup; the PV path becomes
+                              /dev/<vg>/<lvName>.
+                            minLength: 1
+                            type: string
+                          size:
+                            anyOf:
+                            - type: integer
+                            - type: string
+                            description: |-
+                              size of the PV/PVC. Rule of thumb: at least 2x the unpacked image size
+                              (compressed layers and unpacked rootfs share the work dir).
+                            pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
+                            x-kubernetes-int-or-string: true
+                        required:
+                        - lvName
+                        - size
+                        type: object
+                    type: object
+                    x-kubernetes-validations:
+                    - message: exactly one of existingClaim or localVolume must be
+                        set
+                      rule: has(self.existingClaim) != has(self.localVolume)
+                  weightsCache:
+                    description: weightsCache, when present, mounts an encrypted weights
+                      cache.
+                    properties:
+                      sizeLimit:
+                        anyOf:
+                        - type: integer
+                        - type: string
+                        description: |-
+                          sizeLimit caps the encrypted emptyDir; unset means a sparse image
+                          bounded by node disk.
+                        pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
+                        x-kubernetes-int-or-string: true
+                    type: object
+                required:
+                - trustedStore
+                type: object
+            required:
+            - engine
+            - modelRef
+            - resources
+            - storage
             type: object
           status:
             description: status defines the observed state of InferenceService
             properties:
+              appliedInitDataHash:
+                description: |-
+                  appliedInitDataHash is the short sha256 of the initdata blob rendered
+                  into the pod annotation; matches BrukTenant.status.appliedInitDataHash
+                  when converged. Lets humans correlate "why did my pods roll".
+                type: string
               conditions:
                 description: |-
-                  conditions represent the current state of the InferenceService resource.
-                  Each condition has a unique type and reflects the status of a specific aspect of the resource.
-
-                  Standard condition types include:
-                  - "Available": the resource is fully functional
-                  - "Progressing": the resource is being created or updated
-                  - "Degraded": the resource failed to reach or maintain its desired state
-
-                  The status of each condition is one of True, False, or Unknown.
+                  conditions: Configured (spec valid, children rendered and applied),
+                  WorkloadAvailable (Deployment Available), Ready (both), Progressing.
                 items:
                   description: Condition contains details for one aspect of the current
                     state of this API Resource.
@@ -116,6 +319,32 @@ spec:
                 x-kubernetes-list-map-keys:
                 - type
                 x-kubernetes-list-type: map
+              endpoint:
+                description: |-
+                  endpoint is the cluster-internal URL; set once the Service exists and
+                  may precede Ready=True.
+                properties:
+                  url:
+                    description: |-
+                      url is the cluster-internal base URL of the OpenAI-compatible API,
+                      e.g. http://<name>-svc.<namespace>.svc.cluster.local:8000/v1.
+                      The public (Envoy) endpoint is a later phase.
+                    type: string
+                type: object
+              observedGeneration:
+                description: observedGeneration is the most recent generation reconciled.
+                format: int64
+                type: integer
+              resolvedImage:
+                description: |-
+                  resolvedImage is the digest-pinned image actually rendered (visible
+                  even when defaulted from BrukTenant).
+                type: string
+              servedModelName:
+                description: |-
+                  servedModelName is denormalized from the BrukModel so clients know the
+                  exact string to send in the OpenAI "model" field.
+                type: string
             type: object
         required:
         - spec

@@ -25,23 +25,16 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-
 	brukv1alpha1 "github.com/AntonGust/Bruk/operator/api/v1alpha1"
 )
 
 var _ = Describe("BrukTenant Controller", func() {
 	Context("When reconciling a resource", func() {
-		const (
-			resourceName      = "test-resource"
-			resourceNamespace = "default"
-		)
-
+		// Cluster-scoped singleton: CEL enforces metadata.name == "cluster".
 		ctx := context.Background()
 
 		typeNamespacedName := types.NamespacedName{
-			Name:      resourceName,
-			Namespace: resourceNamespace,
+			Name: brukv1alpha1.BrukTenantName,
 		}
 		bruktenant := &brukv1alpha1.BrukTenant{}
 
@@ -49,14 +42,7 @@ var _ = Describe("BrukTenant Controller", func() {
 			By("creating the custom resource for the Kind BrukTenant")
 			err := k8sClient.Get(ctx, typeNamespacedName, bruktenant)
 			if err != nil && errors.IsNotFound(err) {
-				resource := &brukv1alpha1.BrukTenant{
-					ObjectMeta: metav1.ObjectMeta{
-						Name:      resourceName,
-						Namespace: resourceNamespace,
-					},
-					// TODO(user): Specify other spec details if needed.
-				}
-				Expect(k8sClient.Create(ctx, resource)).To(Succeed())
+				Expect(k8sClient.Create(ctx, validTenant())).To(Succeed())
 			}
 		})
 

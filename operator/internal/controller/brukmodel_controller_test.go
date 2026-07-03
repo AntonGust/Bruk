@@ -54,7 +54,7 @@ var _ = Describe("BrukModel Controller", func() {
 						Name:      resourceName,
 						Namespace: resourceNamespace,
 					},
-					// TODO(user): Specify other spec details if needed.
+					Spec: validModelSpec(),
 				}
 				Expect(k8sClient.Create(ctx, resource)).To(Succeed())
 			}

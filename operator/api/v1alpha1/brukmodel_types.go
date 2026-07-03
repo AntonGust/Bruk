@@ -21,38 +21,148 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 )
 
-// EDIT THIS FILE!  THIS IS SCAFFOLDING FOR YOU TO OWN!
-// NOTE: json tags are required.  Any new fields you add must have json tags for the fields to be serialized.
+// Modality is an input/output modality of a model.
+// +kubebuilder:validation:Enum=text;image
+type Modality string
 
-// BrukModelSpec defines the desired state of BrukModel
-type BrukModelSpec struct {
-	// INSERT ADDITIONAL SPEC FIELDS - desired state of cluster
-	// Important: Run "make" to regenerate code after modifying this file
-	// The following markers will use OpenAPI v3 schema to validate the value
-	// More info: https://book.kubebuilder.io/reference/markers/crd-validation.html
+const (
+	ModalityText  Modality = "text"
+	ModalityImage Modality = "image"
+)
 
-	// foo is an example field of BrukModel. Edit brukmodel_types.go to remove/update
+// ModelFeature is an optional capability of a model.
+// +kubebuilder:validation:Enum=tool-calling;structured-output
+type ModelFeature string
+
+const (
+	FeatureToolCalling      ModelFeature = "tool-calling"
+	FeatureStructuredOutput ModelFeature = "structured-output"
+)
+
+// ModelSource says how the engine obtains the model. Exactly one member must
+// be set. v1alpha1 ships HuggingFace-download only (ADR-0006 Part 2: first-run
+// download into encrypted storage); ociArtifact/preStaged are future members.
+// +kubebuilder:validation:XValidation:rule="has(self.huggingFace)",message="a model source must be set (huggingFace)"
+type ModelSource struct {
+	// huggingFace downloads the model from Hugging Face at pod start.
 	// +optional
-	Foo *string `json:"foo,omitempty"`
+	HuggingFace *HuggingFaceSource `json:"huggingFace,omitempty"`
+}
+
+// HuggingFaceSource identifies a Hugging Face model repository.
+type HuggingFaceSource struct {
+	// repo is the Hugging Face repository, e.g. "Qwen/Qwen2.5-0.5B-Instruct".
+	// Rendered as --model=.
+	// +required
+	// +kubebuilder:validation:Pattern=`^[A-Za-z0-9._-]+/[A-Za-z0-9._-]+$`
+	Repo string `json:"repo"`
+
+	// revision pins a Hugging Face commit for deterministic weights.
+	// +optional
+	Revision string `json:"revision,omitempty"`
+
+	// tokenSecretRef names the Secret holding the HF token for gated models
+	// (delivered out-of-band, never in Git). Presence means "gated".
+	// +optional
+	TokenSecretRef *SecretKeyRef `json:"tokenSecretRef,omitempty"`
+}
+
+// PricingSpec is OpenRouter-style pricing metadata, per 1M tokens. Decimal
+// strings, never floats.
+type PricingSpec struct {
+	// promptPerMTokens is the price per 1M prompt tokens.
+	// +optional
+	// +kubebuilder:validation:Pattern=`^[0-9]+(\.[0-9]+)?$`
+	PromptPerMTokens string `json:"promptPerMTokens,omitempty"`
+
+	// completionPerMTokens is the price per 1M completion tokens.
+	// +optional
+	// +kubebuilder:validation:Pattern=`^[0-9]+(\.[0-9]+)?$`
+	CompletionPerMTokens string `json:"completionPerMTokens,omitempty"`
+
+	// currency of the prices.
+	// +optional
+	// +kubebuilder:validation:Enum=EUR;USD
+	// +kubebuilder:default=EUR
+	Currency string `json:"currency,omitempty"`
+}
+
+// CatalogSpec is the OpenRouter-style catalog metadata for a model. It is
+// served by the (future) catalog service; the operator only validates it.
+type CatalogSpec struct {
+	// displayName is the human-readable model name.
+	// +required
+	// +kubebuilder:validation:MinLength=1
+	// +kubebuilder:validation:MaxLength=128
+	DisplayName string `json:"displayName"`
+
+	// description of the model for the catalog.
+	// +optional
+	// +kubebuilder:validation:MaxLength=2048
+	Description string `json:"description,omitempty"`
+
+	// contextLength is the model's NATIVE maximum context window (a catalog
+	// fact). A deployment may serve a smaller window
+	// (InferenceService.spec.engine.maxModelLen).
+	// +required
+	// +kubebuilder:validation:Minimum=256
+	ContextLength int32 `json:"contextLength"`
+
+	// inputModalities the model accepts.
+	// +optional
+	// +listType=atomic
+	InputModalities []Modality `json:"inputModalities,omitempty"`
+
+	// outputModalities the model produces.
+	// +optional
+	// +listType=atomic
+	OutputModalities []Modality `json:"outputModalities,omitempty"`
+
+	// features the model supports.
+	// +optional
+	// +listType=atomic
+	Features []ModelFeature `json:"features,omitempty"`
+
+	// license is the SPDX id, e.g. "Apache-2.0". The model library is
+	// OSI-licensed only (CONTEXT.md).
+	// +optional
+	// +kubebuilder:validation:MaxLength=64
+	License string `json:"license,omitempty"`
+
+	// pricing metadata for the catalog.
+	// +optional
+	Pricing *PricingSpec `json:"pricing,omitempty"`
+}
+
+// BrukModelSpec defines the desired state of BrukModel: model identity
+// (what/where from) plus catalog metadata. The source is platform-curated;
+// customers pick from the library, they don't author sources.
+type BrukModelSpec struct {
+	// source says how the engine obtains the model.
+	// +required
+	Source ModelSource `json:"source"`
+
+	// servedName is the public model id: rendered as --served-model-name and
+	// later the OpenRouter-style catalog id. Defaults to metadata.name.
+	// +optional
+	// +kubebuilder:validation:Pattern=`^[a-z0-9]([a-z0-9._-]*[a-z0-9])?$`
+	// +kubebuilder:validation:MaxLength=63
+	ServedName string `json:"servedName,omitempty"`
+
+	// catalog is the OpenRouter-style metadata for this model.
+	// +required
+	Catalog CatalogSpec `json:"catalog"`
 }
 
 // BrukModelStatus defines the observed state of BrukModel.
 type BrukModelStatus struct {
-	// INSERT ADDITIONAL STATUS FIELD - define observed state of cluster
-	// Important: Run "make" to regenerate code after modifying this file
-
-	// For Kubernetes API conventions, see:
-	// https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/api-conventions.md#typical-status-properties
+	// observedGeneration is the most recent generation reconciled.
+	// +optional
+	ObservedGeneration int64 `json:"observedGeneration,omitempty"`
 
 	// conditions represent the current state of the BrukModel resource.
-	// Each condition has a unique type and reflects the status of a specific aspect of the resource.
-	//
-	// Standard condition types include:
-	// - "Available": the resource is fully functional
-	// - "Progressing": the resource is being created or updated
-	// - "Degraded": the resource failed to reach or maintain its desired state
-	//
-	// The status of each condition is one of True, False, or Unknown.
+	// Ready means the spec validated and, if a token secret is referenced,
+	// it exists.
 	// +listType=map
 	// +listMapKey=type
 	// +optional
@@ -61,6 +171,10 @@ type BrukModelStatus struct {
 
 // +kubebuilder:object:root=true
 // +kubebuilder:subresource:status
+// +kubebuilder:resource:shortName=bm,categories=bruk
+// +kubebuilder:printcolumn:name="Display Name",type=string,JSONPath=`.spec.catalog.displayName`
+// +kubebuilder:printcolumn:name="Context",type=integer,JSONPath=`.spec.catalog.contextLength`
+// +kubebuilder:printcolumn:name="Ready",type=string,JSONPath=`.status.conditions[?(@.type=="Ready")].status`
 
 // BrukModel is the Schema for the brukmodels API
 type BrukModel struct {
@@ -86,6 +200,14 @@ type BrukModelList struct {
 	metav1.TypeMeta `json:",inline"`
 	metav1.ListMeta `json:"metadata,omitzero"`
 	Items           []BrukModel `json:"items"`
+}
+
+// ServedModelName returns spec.servedName, defaulting to metadata.name.
+func (m *BrukModel) ServedModelName() string {
+	if m.Spec.ServedName != "" {
+		return m.Spec.ServedName
+	}
+	return m.Name
 }
 
 func init() {

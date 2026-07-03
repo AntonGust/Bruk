@@ -21,47 +21,110 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 )
 
-// EDIT THIS FILE!  THIS IS SCAFFOLDING FOR YOU TO OWN!
-// NOTE: json tags are required.  Any new fields you add must have json tags for the fields to be serialized.
+// BrukTenantName is the enforced name of the singleton BrukTenant.
+const BrukTenantName = "cluster"
 
-// BrukTenantSpec defines the desired state of BrukTenant
-type BrukTenantSpec struct {
-	// INSERT ADDITIONAL SPEC FIELDS - desired state of cluster
-	// Important: Run "make" to regenerate code after modifying this file
-	// The following markers will use OpenAPI v3 schema to validate the value
-	// More info: https://book.kubebuilder.io/reference/markers/crd-validation.html
+// Condition reasons for BrukTenant and BrukModel.
+const (
+	ReasonValid              = "Valid"
+	ReasonTokenSecretMissing = "TokenSecretMissing"
+)
 
-	// foo is an example field of BrukTenant. Edit bruktenant_types.go to remove/update
+// InfrastructureConfig describes the cluster's physical layout.
+type InfrastructureConfig struct {
+	// nodeHostname is the GPU node (one node per cluster today). Used only
+	// for PV nodeAffinity when the operator creates localVolume PVs; pods
+	// are pinned transitively via volume topology, exactly like the
+	// hand-written manifests (no nodeSelector on Deployments).
+	// +required
+	// +kubebuilder:validation:MinLength=1
+	NodeHostname string `json:"nodeHostname"`
+
+	// storageVolumeGroup is the LVM VG holding trusted-store logical
+	// volumes (manifests/trusted-storage.yaml).
 	// +optional
-	Foo *string `json:"foo,omitempty"`
+	// +kubebuilder:default=bruk
+	StorageVolumeGroup string `json:"storageVolumeGroup,omitempty"`
+}
+
+// EngineDefaults carries cluster-wide engine defaults.
+type EngineDefaults struct {
+	// defaultImage is the cluster default vLLM image, digest-pinned. MUST
+	// stay in lockstep with the registry mirror seed
+	// (manifests/registry/seed-job.yaml): the mirror only serves seeded
+	// digests, so an unseeded digest cannot be pulled by CC guests.
+	// +required
+	// +kubebuilder:validation:Pattern=`^[^@]+@sha256:[a-f0-9]{64}$`
+	DefaultImage string `json:"defaultImage"`
+}
+
+// ConfidentialConfig carries the confidential-computing configuration.
+type ConfidentialConfig struct {
+	// initDataB64 is base64(gzip(initdata.toml)) — the value of the
+	// io.katacontainers.config.hypervisor.cc_init_data pod annotation. In
+	// tenant Git this field carries ${INITDATA_B64} and Flux
+	// postBuild.substitute fills it (gitops/apps/cluster.yaml), the same
+	// pipe the static manifests use today. Changing it rolls every CC pod
+	// on the cluster.
+	// +required
+	// +kubebuilder:validation:MinLength=1
+	// +kubebuilder:validation:Pattern=`^[A-Za-z0-9+/=]+$`
+	InitDataB64 string `json:"initDataB64"`
+}
+
+// BrukTenantSpec defines the desired state of BrukTenant. In v1alpha1 this
+// object is the single-tenant CLUSTER contract (per-cluster platform config
+// under ADR-0001 "the cluster is the tenant boundary") — not an end-user
+// tenant abstraction. Platform-written; customers never author it.
+type BrukTenantSpec struct {
+	// tenantID is the fleet-plane identity (opaque). Optional until the
+	// fleet plane exists.
+	// +optional
+	TenantID string `json:"tenantID,omitempty"`
+
+	// displayName of the cluster/tenant.
+	// +optional
+	// +kubebuilder:validation:MaxLength=128
+	DisplayName string `json:"displayName,omitempty"`
+
+	// infrastructure describes the cluster's physical layout.
+	// +required
+	Infrastructure InfrastructureConfig `json:"infrastructure"`
+
+	// engine carries cluster-wide engine defaults.
+	// +required
+	Engine EngineDefaults `json:"engine"`
+
+	// confidential carries the confidential-computing configuration.
+	// +required
+	Confidential ConfidentialConfig `json:"confidential"`
 }
 
 // BrukTenantStatus defines the observed state of BrukTenant.
 type BrukTenantStatus struct {
-	// INSERT ADDITIONAL STATUS FIELD - define observed state of cluster
-	// Important: Run "make" to regenerate code after modifying this file
+	// observedGeneration is the most recent generation reconciled.
+	// +optional
+	ObservedGeneration int64 `json:"observedGeneration,omitempty"`
 
-	// For Kubernetes API conventions, see:
-	// https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/api-conventions.md#typical-status-properties
-
-	// conditions represent the current state of the BrukTenant resource.
-	// Each condition has a unique type and reflects the status of a specific aspect of the resource.
-	//
-	// Standard condition types include:
-	// - "Available": the resource is fully functional
-	// - "Progressing": the resource is being created or updated
-	// - "Degraded": the resource failed to reach or maintain its desired state
-	//
-	// The status of each condition is one of True, False, or Unknown.
+	// conditions: Ready means the config validated.
 	// +listType=map
 	// +listMapKey=type
 	// +optional
 	Conditions []metav1.Condition `json:"conditions,omitempty"`
+
+	// appliedInitDataHash is the short sha256 of spec.confidential
+	// .initDataB64 — lets humans correlate "why did my pods roll" across
+	// InferenceService statuses.
+	// +optional
+	AppliedInitDataHash string `json:"appliedInitDataHash,omitempty"`
 }
 
 // +kubebuilder:object:root=true
 // +kubebuilder:subresource:status
-// +kubebuilder:resource:scope=Cluster
+// +kubebuilder:resource:scope=Cluster,shortName=bt,categories=bruk
+// +kubebuilder:validation:XValidation:rule="self.metadata.name == 'cluster'",message="BrukTenant is a cluster-scoped singleton and must be named 'cluster'"
+// +kubebuilder:printcolumn:name="Node",type=string,JSONPath=`.spec.infrastructure.nodeHostname`
+// +kubebuilder:printcolumn:name="Ready",type=string,JSONPath=`.status.conditions[?(@.type=="Ready")].status`
 
 // BrukTenant is the Schema for the bruktenants API
 type BrukTenant struct {

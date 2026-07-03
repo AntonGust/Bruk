@@ -54,7 +54,7 @@ var _ = Describe("InferenceService Controller", func() {
 						Name:      resourceName,
 						Namespace: resourceNamespace,
 					},
-					// TODO(user): Specify other spec details if needed.
+					Spec: validInferenceServiceSpec("qwen-0.5b"),
 				}
 				Expect(k8sClient.Create(ctx, resource)).To(Succeed())
 			}

@@ -8,13 +8,27 @@ metadata:
 spec:
   group: bruk.airon.ai
   names:
+    categories:
+    - bruk
     kind: BrukModel
     listKind: BrukModelList
     plural: brukmodels
+    shortNames:
+    - bm
     singular: brukmodel
   scope: Namespaced
   versions:
-  - name: v1alpha1
+  - additionalPrinterColumns:
+    - jsonPath: .spec.catalog.displayName
+      name: Display Name
+      type: string
+    - jsonPath: .spec.catalog.contextLength
+      name: Context
+      type: integer
+    - jsonPath: .status.conditions[?(@.type=="Ready")].status
+      name: Ready
+      type: string
+    name: v1alpha1
     schema:
       openAPIV3Schema:
         description: BrukModel is the Schema for the brukmodels API
@@ -39,10 +53,137 @@ spec:
           spec:
             description: spec defines the desired state of BrukModel
             properties:
-              foo:
-                description: foo is an example field of BrukModel. Edit brukmodel_types.go
-                  to remove/update
+              catalog:
+                description: catalog is the OpenRouter-style metadata for this model.
+                properties:
+                  contextLength:
+                    description: |-
+                      contextLength is the model's NATIVE maximum context window (a catalog
+                      fact). A deployment may serve a smaller window
+                      (InferenceService.spec.engine.maxModelLen).
+                    format: int32
+                    minimum: 256
+                    type: integer
+                  description:
+                    description: description of the model for the catalog.
+                    maxLength: 2048
+                    type: string
+                  displayName:
+                    description: displayName is the human-readable model name.
+                    maxLength: 128
+                    minLength: 1
+                    type: string
+                  features:
+                    description: features the model supports.
+                    items:
+                      description: ModelFeature is an optional capability of a model.
+                      enum:
+                      - tool-calling
+                      - structured-output
+                      type: string
+                    type: array
+                    x-kubernetes-list-type: atomic
+                  inputModalities:
+                    description: inputModalities the model accepts.
+                    items:
+                      description: Modality is an input/output modality of a model.
+                      enum:
+                      - text
+                      - image
+                      type: string
+                    type: array
+                    x-kubernetes-list-type: atomic
+                  license:
+                    description: |-
+                      license is the SPDX id, e.g. "Apache-2.0". The model library is
+                      OSI-licensed only (CONTEXT.md).
+                    maxLength: 64
+                    type: string
+                  outputModalities:
+                    description: outputModalities the model produces.
+                    items:
+                      description: Modality is an input/output modality of a model.
+                      enum:
+                      - text
+                      - image
+                      type: string
+                    type: array
+                    x-kubernetes-list-type: atomic
+                  pricing:
+                    description: pricing metadata for the catalog.
+                    properties:
+                      completionPerMTokens:
+                        description: completionPerMTokens is the price per 1M completion
+                          tokens.
+                        pattern: ^[0-9]+(\.[0-9]+)?$
+                        type: string
+                      currency:
+                        default: EUR
+                        description: currency of the prices.
+                        enum:
+                        - EUR
+                        - USD
+                        type: string
+                      promptPerMTokens:
+                        description: promptPerMTokens is the price per 1M prompt tokens.
+                        pattern: ^[0-9]+(\.[0-9]+)?$
+                        type: string
+                    type: object
+                required:
+                - contextLength
+                - displayName
+                type: object
+              servedName:
+                description: |-
+                  servedName is the public model id: rendered as --served-model-name and
+                  later the OpenRouter-style catalog id. Defaults to metadata.name.
+                maxLength: 63
+                pattern: ^[a-z0-9]([a-z0-9._-]*[a-z0-9])?$
                 type: string
+              source:
+                description: source says how the engine obtains the model.
+                properties:
+                  huggingFace:
+                    description: huggingFace downloads the model from Hugging Face
+                      at pod start.
+                    properties:
+                      repo:
+                        description: |-
+                          repo is the Hugging Face repository, e.g. "Qwen/Qwen2.5-0.5B-Instruct".
+                          Rendered as --model=.
+                        pattern: ^[A-Za-z0-9._-]+/[A-Za-z0-9._-]+$
+                        type: string
+                      revision:
+                        description: revision pins a Hugging Face commit for deterministic
+                          weights.
+                        type: string
+                      tokenSecretRef:
+                        description: |-
+                          tokenSecretRef names the Secret holding the HF token for gated models
+                          (delivered out-of-band, never in Git). Presence means "gated".
+                        properties:
+                          key:
+                            default: token
+                            description: key within the Secret.
+                            type: string
+                          name:
+                            description: name of the Secret.
+                            maxLength: 253
+                            minLength: 1
+                            type: string
+                        required:
+                        - name
+                        type: object
+                    required:
+                    - repo
+                    type: object
+                type: object
+                x-kubernetes-validations:
+                - message: a model source must be set (huggingFace)
+                  rule: has(self.huggingFace)
+            required:
+            - catalog
+            - source
             type: object
           status:
             description: status defines the observed state of BrukModel
@@ -50,14 +191,8 @@ spec:
               conditions:
                 description: |-
                   conditions represent the current state of the BrukModel resource.
-                  Each condition has a unique type and reflects the status of a specific aspect of the resource.
-
-                  Standard condition types include:
-                  - "Available": the resource is fully functional
-                  - "Progressing": the resource is being created or updated
-                  - "Degraded": the resource failed to reach or maintain its desired state
-
-                  The status of each condition is one of True, False, or Unknown.
+                  Ready means the spec validated and, if a token secret is referenced,
+                  it exists.
                 items:
                   description: Condition contains details for one aspect of the current
                     state of this API Resource.
@@ -116,6 +251,10 @@ spec:
                 x-kubernetes-list-map-keys:
                 - type
                 x-kubernetes-list-type: map
+              observedGeneration:
+                description: observedGeneration is the most recent generation reconciled.
+                format: int64
+                type: integer
             type: object
         required:
         - spec

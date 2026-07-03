@@ -16,7 +16,10 @@ limitations under the License.
 
 package controller
 
-import "testing"
+import (
+	"strings"
+	"testing"
+)
 
 func TestValidateInitData(t *testing.T) {
 	tests := []struct {
@@ -52,5 +55,18 @@ func TestValidateInitData(t *testing.T) {
 				t.Errorf("validateInitData() error = %v, wantErr %v", err, tc.wantErr)
 			}
 		})
+	}
+}
+
+// Leak-guard (ADR-0008): a validation error must never echo the blob back —
+// the blob is sensitive trust-path config, and error strings surface in status.
+func TestValidateInitDataErrorDoesNotEchoBlob(t *testing.T) {
+	sentinel := "SENTINEL_BLOB_do_not_echo_" + strings.Repeat("A", 40)
+	err := validateInitData(sentinel + "!!!not-base64!!!")
+	if err == nil {
+		t.Fatal("expected an error for an invalid blob")
+	}
+	if strings.Contains(err.Error(), sentinel) {
+		t.Errorf("validateInitData error echoed the blob: %q", err.Error())
 	}
 }

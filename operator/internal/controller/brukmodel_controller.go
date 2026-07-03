@@ -60,6 +60,15 @@ func (r *BrukModelReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 	reason := brukv1alpha1.ReasonValid
 	message := "model spec is valid"
 
+	// Non-fatal supply-chain warning (ADR-0008): an unpinned HuggingFace
+	// revision means the served weights can change after review. Still Ready,
+	// but the risk is visible in `kubectl get bm`. A missing token secret is a
+	// harder failure and takes precedence below.
+	if hf := model.Spec.Source.HuggingFace; hf != nil && hf.Revision == "" {
+		reason = brukv1alpha1.ReasonUnpinnedRevision
+		message = "huggingFace.revision is not pinned; served weights may change after review (recommend pinning a commit SHA)"
+	}
+
 	if ref := model.Spec.Source.HuggingFace.TokenSecretRef; ref != nil {
 		secret := &corev1.Secret{}
 		err := r.Get(ctx, types.NamespacedName{Name: ref.Name, Namespace: model.Namespace}, secret)

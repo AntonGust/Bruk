@@ -90,13 +90,46 @@ var _ = Describe("BrukModel Controller", func() {
 			Expect(got.Status.ObservedGeneration).To(Equal(got.Generation))
 		})
 
+		It("warns (non-fatal) when the HuggingFace revision is unpinned", func() {
+			// validModelSpec() sets no revision, so the sample is unpinned.
+			controllerReconciler := &BrukModelReconciler{Client: k8sClient, Scheme: k8sClient.Scheme()}
+			_, err := controllerReconciler.Reconcile(ctx, reconcile.Request{NamespacedName: typeNamespacedName})
+			Expect(err).NotTo(HaveOccurred())
+
+			got := &brukv1alpha1.BrukModel{}
+			Expect(k8sClient.Get(ctx, typeNamespacedName, got)).To(Succeed())
+			ready := apimeta.FindStatusCondition(got.Status.Conditions, "Ready")
+			Expect(ready).To(HaveField("Status", metav1.ConditionTrue)) // non-fatal
+			Expect(ready).To(HaveField("Reason", brukv1alpha1.ReasonUnpinnedRevision))
+		})
+
+		It("marks a pinned model Ready with reason Valid", func() {
+			pinned := &brukv1alpha1.BrukModel{
+				ObjectMeta: metav1.ObjectMeta{Name: pinnedModelName, Namespace: resourceNamespace},
+				Spec:       validModelSpec(),
+			}
+			pinned.Spec.Source.HuggingFace.Revision = "e0bcfd9c94b0d3d1e8b0a3d5b0e0e0e0e0e0e0e0"
+			Expect(k8sClient.Create(ctx, pinned)).To(Succeed())
+
+			controllerReconciler := &BrukModelReconciler{Client: k8sClient, Scheme: k8sClient.Scheme()}
+			_, err := controllerReconciler.Reconcile(ctx, reconcile.Request{
+				NamespacedName: types.NamespacedName{Name: pinnedModelName, Namespace: resourceNamespace},
+			})
+			Expect(err).NotTo(HaveOccurred())
+
+			got := &brukv1alpha1.BrukModel{}
+			Expect(k8sClient.Get(ctx, types.NamespacedName{Name: pinnedModelName, Namespace: resourceNamespace}, got)).To(Succeed())
+			ready := apimeta.FindStatusCondition(got.Status.Conditions, "Ready")
+			Expect(ready).To(HaveField("Reason", brukv1alpha1.ReasonValid))
+		})
+
 		It("marks a gated model with a missing token secret not Ready", func() {
 			gated := &brukv1alpha1.BrukModel{
 				ObjectMeta: metav1.ObjectMeta{Name: gatedModelName, Namespace: resourceNamespace},
 				Spec:       validModelSpec(),
 			}
 			gated.Spec.Source.HuggingFace.TokenSecretRef = &brukv1alpha1.SecretKeyRef{
-				Name: "no-such-secret", Key: "token",
+				Name: "no-such-secret", Key: secretTokenKey,
 			}
 			Expect(k8sClient.Create(ctx, gated)).To(Succeed())
 

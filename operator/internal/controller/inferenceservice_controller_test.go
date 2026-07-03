@@ -199,6 +199,34 @@ var _ = Describe("InferenceService Controller", func() {
 		})
 	})
 
+	Context("resource caps (CEL, admission-time)", func() {
+		It("rejects a memory.limit above the ceiling at admission", func() {
+			ensureModel(ctx, "model-bigmem")
+			isvc := &brukv1alpha1.InferenceService{
+				ObjectMeta: metav1.ObjectMeta{Name: "isvc-bigmem", Namespace: testNS},
+				Spec:       validInferenceServiceSpec("model-bigmem"),
+			}
+			isvc.Spec.Storage.TrustedStore.ExistingClaim = "claim-bigmem"
+			isvc.Spec.Resources.Memory.Limit = mustQ("1000Gi") // over the 512Gi ceiling
+			err := k8sClient.Create(ctx, isvc)
+			Expect(err).To(HaveOccurred())
+			Expect(err.Error()).To(ContainSubstring("memory.limit must not exceed"))
+		})
+
+		It("rejects a cpu.limit above the ceiling at admission", func() {
+			ensureModel(ctx, "model-bigcpu")
+			isvc := &brukv1alpha1.InferenceService{
+				ObjectMeta: metav1.ObjectMeta{Name: "isvc-bigcpu", Namespace: testNS},
+				Spec:       validInferenceServiceSpec("model-bigcpu"),
+			}
+			isvc.Spec.Storage.TrustedStore.ExistingClaim = "claim-bigcpu"
+			isvc.Spec.Resources.CPU.Limit = mustQ("256") // over the 128 ceiling
+			err := k8sClient.Create(ctx, isvc)
+			Expect(err).To(HaveOccurred())
+			Expect(err.Error()).To(ContainSubstring("cpu.limit must not exceed"))
+		})
+	})
+
 	Context("failure modes", func() {
 		It("reports TenantConfigMissing without touching children when the tenant is absent", func() {
 			ensureModel(ctx, "model-notenant")

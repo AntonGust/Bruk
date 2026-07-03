@@ -29,6 +29,11 @@ const (
 	testVLLMImage = "docker.io/vllm/vllm-openai@sha256:d5b12dfb74d605615f8b29ebafaa52294c118bcac7bc9e941785c4108fdb913a"
 	// base64(gzip(comment)) — syntactically valid, semantically inert in envtest.
 	testInitDataB64 = "H4sIAAAAAAAAA1NWKMhJTE7NyM9JSS1SyMzLLElJLElUSMsvUihOzC3ISS3WTzVKVXjUMEXBzz9EIVGhKDUxRyEpJz+JCwCpEyiVOwAAAA=="
+
+	// Shared test literals (satisfy goconst).
+	secretTokenKey     = "token"
+	pinnedModelName    = "pinned-model"
+	tokenLeakModelName = "model-token-leak"
 )
 
 func validModelSpec() brukv1alpha1.BrukModelSpec {

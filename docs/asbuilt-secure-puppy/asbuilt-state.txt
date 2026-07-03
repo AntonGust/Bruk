@@ -12,7 +12,7 @@ BOOT_IMAGE=/boot/vmlinuz-6.17.0-35-generic root=UUID=5766b0f3-8c57-43fc-8ec0-5c5
 k3s version v1.35.5+k3s1 (6a4781ad)
 go version go1.25.9
 NAME           STATUS   ROLES                AGE   VERSION        INTERNAL-IP    EXTERNAL-IP   OS-IMAGE             KERNEL-VERSION      CONTAINER-RUNTIME
-secure-puppy   Ready    control-plane,etcd   10d   v1.35.5+k3s1   77.87.121.27   <none>        Ubuntu 24.04.4 LTS   6.17.0-35-generic   containerd://2.2.3-k3s1
+secure-puppy   Ready    control-plane,etcd   10d   v1.35.5+k3s1   <build-box>   <none>        Ubuntu 24.04.4 LTS   6.17.0-35-generic   containerd://2.2.3-k3s1
 
 ## RuntimeClasses
 NAME                            HANDLER                         AGE

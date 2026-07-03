@@ -1,4 +1,4 @@
-# BIOS / CBS pass — new H100 box (`anton-bruk`, 77.87.121.15)
+# BIOS / CBS pass — new H100 box (`anton-bruk`)
 
 Firmware-only state — **nothing on disk restores it** (task #2). This is the recipe to bring the new
 box to the same SEV-SNP end-state the old box (`secure-puppy`) reached, plus the fTPM that never took.
@@ -57,7 +57,7 @@ Enter setup via the iKVM console → **Advanced → AMD CBS**.
 
 ## Save, reboot, verify
 
-Save & Exit → let it reboot. Then over SSH (`ssh ubuntu@77.87.121.15`):
+Save & Exit → let it reboot. Then over SSH (`ssh ubuntu@<build-box>`):
 
 ```bash
 sudo dmesg | grep -iE 'SEV|ccp.*SEV|AMD-Vi: IOMMU SNP'

@@ -1,0 +1,40 @@
+# Airon Operator (Phase 3.2, ADR-0002) — SUSPENDED until cluster rollout.
+#
+# GATE: spec.suspend=true. The object lands in-cluster (visible via
+# `flux get helmreleases -n flux-system`) but helm-controller never reconciles
+# it: no chart fetch, no install, no namespace, no pods. INERTNESS CONTRACT:
+# committing this file must change nothing observable except the HelmRelease
+# object itself; the ghcr-pull secret is NOT required while suspended.
+#
+# UNSUSPEND CHECKLIST (a follow-up phase, one reviewed commit flipping suspend):
+#   1. Out-of-band pull secret (same pattern as hf-token — never in Git):
+#        kubectl create ns airon-operator-system
+#        kubectl -n airon-operator-system create secret docker-registry ghcr-pull \
+#          --docker-server=ghcr.io --docker-username=AntonGust \
+#          --docker-password=<PAT with read:packages>
+#   2. install/helm-values/airon-operator.yaml pins the released image BY DIGEST.
+#   3. Flip suspend below to false, commit, `flux reconcile ks bruk-helm`.
+#
+# Chart comes from the EXISTING `bruk` GitRepository (read-only deploy key —
+# no new sources or credentials); reconcileStrategy Revision ships chart edits
+# per git revision without Chart.yaml version-bump ceremony.
+apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
+metadata:
+  name: airon-operator
+  namespace: flux-system
+spec:
+  suspend: true # THE GATE — unsuspending is a reviewed one-line commit
+  interval: 30m
+  releaseName: airon-operator
+  targetNamespace: airon-operator-system
+  storageNamespace: airon-operator-system
+  install:
+    createNamespace: true
+  chart:
+    spec:
+      chart: ./operator/dist/chart
+      reconcileStrategy: Revision
+      sourceRef: { kind: GitRepository, name: bruk }
+  valuesFrom:
+    - { kind: ConfigMap, name: airon-operator-values, valuesKey: airon-operator.yaml }

@@ -14,3 +14,7 @@ configMapGenerator:
     files: [gpu-operator.yaml]
   - name: kata-deploy-values
     files: [kata-deploy.yaml]
+  # Consumed by the SUSPENDED airon-operator HelmRelease — publishing the
+  # ConfigMap is inert until that release is unsuspended (Phase 3.2 gate).
+  - name: airon-operator-values
+    files: [airon-operator.yaml]

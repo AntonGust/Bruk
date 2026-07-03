@@ -46,9 +46,12 @@ type InferenceServiceReconciler struct {
 	Scheme *runtime.Scheme
 }
 
-// +kubebuilder:rbac:groups=bruk.airon.ai,resources=inferenceservices,verbs=get;list;watch;create;update;patch;delete
+// Least-privilege RBAC (ADR-0008): the operator only READS its CR kinds and
+// writes their /status — it never creates, deletes, or mutates CR specs
+// (customers/Flux own that). It owns the child Deployments/Services/ConfigMaps
+// it renders. secrets: get only (existence check; never list/watch/read-value).
+// +kubebuilder:rbac:groups=bruk.airon.ai,resources=inferenceservices,verbs=get;list;watch
 // +kubebuilder:rbac:groups=bruk.airon.ai,resources=inferenceservices/status,verbs=get;update;patch
-// +kubebuilder:rbac:groups=bruk.airon.ai,resources=inferenceservices/finalizers,verbs=update
 // +kubebuilder:rbac:groups=bruk.airon.ai,resources=brukmodels,verbs=get;list;watch
 // +kubebuilder:rbac:groups=bruk.airon.ai,resources=bruktenants,verbs=get;list;watch
 // +kubebuilder:rbac:groups=apps,resources=deployments,verbs=get;list;watch;create;update;patch;delete

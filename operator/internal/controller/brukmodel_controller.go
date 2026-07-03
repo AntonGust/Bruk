@@ -39,9 +39,8 @@ type BrukModelReconciler struct {
 	Scheme *runtime.Scheme
 }
 
-// +kubebuilder:rbac:groups=bruk.airon.ai,resources=brukmodels,verbs=get;list;watch;create;update;patch;delete
+// +kubebuilder:rbac:groups=bruk.airon.ai,resources=brukmodels,verbs=get;list;watch
 // +kubebuilder:rbac:groups=bruk.airon.ai,resources=brukmodels/status,verbs=get;update;patch
-// +kubebuilder:rbac:groups=bruk.airon.ai,resources=brukmodels/finalizers,verbs=update
 // +kubebuilder:rbac:groups="",resources=secrets,verbs=get
 
 // Reconcile validates a BrukModel and records the result as a Ready

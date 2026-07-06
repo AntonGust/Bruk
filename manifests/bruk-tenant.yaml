@@ -1,0 +1,22 @@
+# The single-tenant cluster contract for the reference cluster (anton-bruk), applied by Flux
+# via the bruk-cluster Kustomization. initDataB64 carries the ${INITDATA_B64} placeholder that
+# the SAME bruk-cluster postBuild.substitute (blob in gitops/apps/cluster.yaml) fills in — the
+# very pipe that already feeds the hand-written workload cc_init_data annotations.
+#
+# defaultImage MUST match the mirror seed digest (manifests/registry/seed-job.yaml) — CC guests
+# pull by digest through the local mirror. Cluster-scoped singleton: metadata.name must be
+# "cluster" (CEL-enforced); Flux leaves cluster-scoped resources un-namespaced despite the
+# Kustomization's targetNamespace.
+apiVersion: bruk.airon.ai/v1alpha1
+kind: BrukTenant
+metadata:
+  name: cluster
+spec:
+  displayName: "anton-bruk reference cluster"
+  infrastructure:
+    nodeHostname: anton-bruk
+    storageVolumeGroup: bruk
+  engine:
+    defaultImage: docker.io/vllm/vllm-openai@sha256:d5b12dfb74d605615f8b29ebafaa52294c118bcac7bc9e941785c4108fdb913a
+  confidential:
+    initDataB64: "${INITDATA_B64}"

@@ -25,10 +25,12 @@ import (
 	// to ensure that exec-entrypoint and run can make use of them.
 	_ "k8s.io/client-go/plugin/pkg/client/auth"
 
+	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
 	ctrl "sigs.k8s.io/controller-runtime"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/healthz"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 	"sigs.k8s.io/controller-runtime/pkg/metrics/filters"
@@ -50,6 +52,19 @@ func init() {
 
 	utilruntime.Must(brukv1alpha1.AddToScheme(scheme))
 	// +kubebuilder:scaffold:scheme
+}
+
+// clientOptions configures the controller-runtime client. Secrets are excluded
+// from the cache: the operator only ever does a point Get on a Secret (the
+// BrukModel token-presence check) under get-only RBAC (ADR-0008). The default
+// cached client would serve that Get through a list+watch informer, which
+// get-only RBAC forbids — so read Secrets straight from the API server instead.
+func clientOptions() client.Options {
+	return client.Options{
+		Cache: &client.CacheOptions{
+			DisableFor: []client.Object{&corev1.Secret{}},
+		},
+	}
 }
 
 // nolint:gocyclo
@@ -161,6 +176,7 @@ func main() {
 		HealthProbeBindAddress: probeAddr,
 		LeaderElection:         enableLeaderElection,
 		LeaderElectionID:       "c6f50ef7.airon.ai",
+		Client:                 clientOptions(),
 		// LeaderElectionReleaseOnCancel defines if the leader should step down voluntarily
 		// when the Manager ends. This requires the binary to immediately end when the
 		// Manager is stopped, otherwise, this setting is unsafe. Setting this significantly

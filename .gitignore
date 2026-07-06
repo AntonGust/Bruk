@@ -6,6 +6,10 @@ Thumbs.db
 .vscode/
 .idea/
 
+# Local Claude Code config, skills, and tooling — machine-local, deliberately kept
+# out of the (public) repo so box access details never get committed.
+.claude/
+
 # Local scratch / experiments (never the source of truth)
 scratch/
 tmp/

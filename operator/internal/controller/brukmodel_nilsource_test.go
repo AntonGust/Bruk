@@ -30,6 +30,8 @@ import (
 	brukv1alpha1 "github.com/AntonGust/Bruk/operator/api/v1alpha1"
 )
 
+const nilSourceModelName = "sourceless"
+
 // TestReconcileNilHuggingFaceSource exercises the defense-in-depth guard for a
 // BrukModel whose spec.source has no huggingFace member. The CRD CEL rule
 // (has(self.huggingFace)) rejects this at admission, so it cannot be created
@@ -43,11 +45,11 @@ func TestReconcileNilHuggingFaceSource(t *testing.T) {
 	}
 
 	model := &brukv1alpha1.BrukModel{
-		ObjectMeta: metav1.ObjectMeta{Name: "sourceless", Namespace: "default"},
+		ObjectMeta: metav1.ObjectMeta{Name: nilSourceModelName, Namespace: "default"},
 		Spec: brukv1alpha1.BrukModelSpec{
 			Source: brukv1alpha1.ModelSource{}, // HuggingFace is nil
 			Catalog: brukv1alpha1.CatalogSpec{
-				DisplayName:   "sourceless",
+				DisplayName:   "Sourceless model",
 				ContextLength: 4096,
 			},
 		},
@@ -59,7 +61,7 @@ func TestReconcileNilHuggingFaceSource(t *testing.T) {
 		WithStatusSubresource(&brukv1alpha1.BrukModel{}).
 		Build()
 	reconciler := &BrukModelReconciler{Client: c, Scheme: scheme}
-	key := types.NamespacedName{Name: "sourceless", Namespace: "default"}
+	key := types.NamespacedName{Name: nilSourceModelName, Namespace: "default"}
 
 	// Act — must not panic on the nil huggingFace deref.
 	_, err := reconciler.Reconcile(context.Background(), reconcile.Request{NamespacedName: key})

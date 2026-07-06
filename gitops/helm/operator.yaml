@@ -14,9 +14,12 @@
 #   3. Flip suspend below to false, commit, `flux reconcile ks bruk-helm`.
 #   (install.createNamespace below makes the target namespace; no manual step.)
 #
-# Chart comes from the EXISTING `bruk` GitRepository (read-only deploy key —
-# no new sources or credentials); reconcileStrategy Revision ships chart edits
-# per git revision without Chart.yaml version-bump ceremony.
+# Chart comes from the EXISTING `bruk` GitRepository (read-only deploy key — no new sources or
+# credentials). reconcileStrategy is left DEFAULT (ChartVersion): the chart's helm.sh/chart label
+# stamps the raw .Chart.Version, and Revision strategy appends "+<git-sha>" — a "+" is invalid in a
+# k8s label value, so server-side apply rejects every object (install fails). With ChartVersion the
+# version stays "0.1.0" (valid). Trade-off: bump operator/dist/chart Chart.yaml to ship template
+# edits (values changes still upgrade via valuesFrom regardless).
 apiVersion: helm.toolkit.fluxcd.io/v2
 kind: HelmRelease
 metadata:
@@ -33,7 +36,6 @@ spec:
   chart:
     spec:
       chart: ./operator/dist/chart
-      reconcileStrategy: Revision
       sourceRef: { kind: GitRepository, name: bruk }
   valuesFrom:
     - { kind: ConfigMap, name: airon-operator-values, valuesKey: airon-operator.yaml }

@@ -1,11 +1,16 @@
 # Flux entry point for the confidential app layer (gitops/apps/cluster.yaml points here).
 # Explicit resource list — the other files in this directory are either legacy/non-CC
 # (day4-vllm.yaml, h100-vllm.yaml), managed separately (registry/), or manual probes
-# (attestation/). The workload manifests carry a ${INITDATA_B64} placeholder that the Flux
-# Kustomization substitutes post-build (gitops/apps/cluster.yaml holds the blob).
+# (attestation/). The ${INITDATA_B64} placeholder (in bruk-tenant.yaml and h100-vllm-cc.yaml)
+# is substituted post-build by the Flux Kustomization (gitops/apps/cluster.yaml holds the blob).
+#
+# Smoke slice is now operator-driven: the BrukTenant + BrukModel + InferenceService CRs below
+# replace the hand-written h100-vllm-cc-smoke.yaml, which the operator renders identically
+# (kept on disk as the render golden-test reference, intentionally NOT listed here).
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 resources:
   - trusted-storage.yaml
-  - h100-vllm-cc-smoke.yaml
+  - bruk-tenant.yaml
+  - bruk-smoke-workload.yaml
   - h100-vllm-cc.yaml

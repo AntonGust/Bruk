@@ -1,0 +1,44 @@
+# Smoke workload as CRs — slice 1 of the operator adoption (operator/README.md, "Adopting the
+# hand-written workloads"). The operator renders these into Deployment vllm-cc-smoke +
+# Service vllm-cc-smoke-svc, golden-proven (operator/internal/render tests) byte-for-byte
+# identical to manifests/h100-vllm-cc-smoke.yaml — which stays in the repo as the golden
+# reference but is dropped from this directory's kustomization.yaml at cutover.
+#
+# Requires: the operator running (CRDs installed via the airon-operator HelmRelease) and the
+# BrukTenant "cluster" (manifests/bruk-tenant.yaml). The serving image comes from
+# BrukTenant.spec.engine.defaultImage — there is no per-workload image field (ADR-0008).
+apiVersion: bruk.airon.ai/v1alpha1
+kind: BrukModel
+metadata:
+  name: qwen-0.5b
+spec:
+  source:
+    huggingFace:
+      repo: Qwen/Qwen2.5-0.5B-Instruct
+  catalog:
+    displayName: "Qwen2.5 0.5B Instruct"
+    description: "Tiny Apache-2.0 instruct model used as the confidential-serving smoke workload."
+    contextLength: 32768
+    license: Apache-2.0
+---
+apiVersion: bruk.airon.ai/v1alpha1
+kind: InferenceService
+metadata:
+  name: vllm-cc-smoke
+spec:
+  modelRef:
+    name: qwen-0.5b
+  engine:
+    maxModelLen: 8192
+    gpuMemoryUtilizationPercent: 30
+  resources:
+    gpus: 1
+    memory:
+      limit: 32Gi
+      request: 16Gi
+    cpu:
+      limit: "8"
+      request: "4"
+  storage:
+    trustedStore:
+      existingClaim: trusted-image-smoke

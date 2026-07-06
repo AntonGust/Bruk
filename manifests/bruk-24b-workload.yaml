@@ -1,0 +1,55 @@
+# Production 24B workload as CRs — slice 2 of the operator adoption (operator/README.md).
+# The operator renders these into Deployment vllm-cc + Service vllm-cc-svc, golden-proven
+# (operator/internal/render tests, prodModel/prodService) identical to manifests/h100-vllm-cc.yaml,
+# which stays on disk as the golden reference but is dropped from this dir's kustomization.yaml.
+#
+# vs the smoke slice: weightsCache (block-encrypted HF cache + gai.conf IPv4-first mount for the
+# ~50GB download), tokenSecretRef (gated model), and fp8 quantization. The serving image is still
+# BrukTenant.spec.engine.defaultImage (no per-workload image — ADR-0008); initdata comes from the
+# tenant. The operator creates the gai-ipv4-first ConfigMap itself when weightsCache is set.
+#
+# Requires the out-of-band `hf-token` secret in namespace default (gated model; never in Git):
+#   kubectl create secret generic hf-token --from-literal=token=$HF_TOKEN
+apiVersion: bruk.airon.ai/v1alpha1
+kind: BrukModel
+metadata:
+  name: mistral-small-3.1-24b
+spec:
+  source:
+    huggingFace:
+      repo: mistralai/Mistral-Small-3.1-24B-Instruct-2503
+      tokenSecretRef:
+        name: hf-token
+        key: token
+  servedName: mistral-small-3.1
+  catalog:
+    displayName: "Mistral Small 3.1 24B"
+    description: "Mistral Small 3.1 24B Instruct (FP8) — the production confidential-serving model. Vision-capable; served at a 32k window (native 128k)."
+    contextLength: 131072
+    license: Apache-2.0
+    inputModalities: [text, image]
+    outputModalities: [text]
+---
+apiVersion: bruk.airon.ai/v1alpha1
+kind: InferenceService
+metadata:
+  name: vllm-cc
+spec:
+  modelRef:
+    name: mistral-small-3.1-24b
+  engine:
+    quantization: fp8
+    maxModelLen: 32768
+    gpuMemoryUtilizationPercent: 90
+  resources:
+    gpus: 1
+    memory:
+      limit: 64Gi
+      request: 32Gi
+    cpu:
+      limit: "8"
+      request: "4"
+  storage:
+    trustedStore:
+      existingClaim: trusted-image-24b
+    weightsCache: {}

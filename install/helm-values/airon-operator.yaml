@@ -9,4 +9,6 @@ controllerManager:
   container:
     image:
       repository: ghcr.io/antongust/bruk-operator
-      tag: "v0.1.0" # TODO(release): replace with "v0.1.0@sha256:<digest>" from the operator-release run BEFORE unsuspending
+      # Pinned by digest (tag stays readable, digest is authoritative). From the
+      # operator-release run for tag operator/v0.1.0 (2026-07-06).
+      tag: "v0.1.0@sha256:2cf1b21a0175918ca41df2591c4c8784f2e0440efd2cfd68c00eaeb585301121"

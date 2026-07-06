@@ -23,7 +23,7 @@ metadata:
   name: airon-operator
   namespace: flux-system
 spec:
-  suspend: true # THE GATE — unsuspending is a reviewed one-line commit
+  suspend: false # UNSUSPENDED (v0.1.0, digest-pinned). ⚠️ merge only AFTER the GHCR package is PUBLIC (checklist step 1), else the manager pod ImagePullBackOffs.
   interval: 30m
   releaseName: airon-operator
   targetNamespace: airon-operator-system

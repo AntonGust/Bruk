@@ -56,6 +56,18 @@ func (r *BrukModelReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 		return ctrl.Result{}, client.IgnoreNotFound(err)
 	}
 
+	// Defense-in-depth: the CRD CEL rule has(self.huggingFace) rejects a
+	// sourceless BrukModel at admission, but the reconciler must not dereference
+	// a spec it did not validate itself — an unguarded access below would panic
+	// and hot-loop the controller if that rule were ever absent (a cluster
+	// without CEL validation, or a hand-applied CRD). v1alpha1 supports only the
+	// huggingFace source.
+	hf := model.Spec.Source.HuggingFace
+	if hf == nil {
+		return r.setReady(ctx, model, metav1.ConditionFalse, brukv1alpha1.ReasonInvalidConfig,
+			"BrukModel has no huggingFace source; v1alpha1 supports only huggingFace")
+	}
+
 	status := metav1.ConditionTrue
 	reason := brukv1alpha1.ReasonValid
 	message := "model spec is valid"
@@ -64,12 +76,12 @@ func (r *BrukModelReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 	// revision means the served weights can change after review. Still Ready,
 	// but the risk is visible in `kubectl get bm`. A missing token secret is a
 	// harder failure and takes precedence below.
-	if hf := model.Spec.Source.HuggingFace; hf != nil && hf.Revision == "" {
+	if hf.Revision == "" {
 		reason = brukv1alpha1.ReasonUnpinnedRevision
 		message = "huggingFace.revision is not pinned; served weights may change after review (recommend pinning a commit SHA)"
 	}
 
-	if ref := model.Spec.Source.HuggingFace.TokenSecretRef; ref != nil {
+	if ref := hf.TokenSecretRef; ref != nil {
 		secret := &corev1.Secret{}
 		err := r.Get(ctx, types.NamespacedName{Name: ref.Name, Namespace: model.Namespace}, secret)
 		switch {
@@ -86,6 +98,13 @@ func (r *BrukModelReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 		}
 	}
 
+	return r.setReady(ctx, model, status, reason, message)
+}
+
+// setReady records the Ready condition and observedGeneration in one place so
+// every exit path from Reconcile writes status identically.
+func (r *BrukModelReconciler) setReady(ctx context.Context, model *brukv1alpha1.BrukModel,
+	status metav1.ConditionStatus, reason, message string) (ctrl.Result, error) {
 	meta.SetStatusCondition(&model.Status.Conditions, metav1.Condition{
 		Type:               "Ready",
 		Status:             status,

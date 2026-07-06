@@ -16,6 +16,10 @@ CILIUM_VERSION="1.19.5"
 GPU_OPERATOR_VERSION="v26.3.2"
 KATA_DEPLOY_VERSION="3.29.0"
 FLUX_VERSION="v2.9.0"
+HELM_VERSION="v3.17.3"
+# sha256 of helm-${HELM_VERSION}-linux-amd64.tar.gz from https://get.helm.sh
+# (published as .../helm-${HELM_VERSION}-linux-amd64.tar.gz.sha256sum; keep in sync with HELM_VERSION).
+HELM_SHA256_AMD64="ee88b3c851ae6466a3de507f7be73fe94d54cbf2987cbaa3d1a3832ea331f2cd"
 set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -42,9 +46,17 @@ fi
 mkdir -p "$(dirname "$KUBECONFIG")"
 sudo cp /etc/rancher/k3s/k3s.yaml "$KUBECONFIG" && sudo chown "$(id -u):$(id -g)" "$KUBECONFIG"
 
-# --- 2. Helm ----------------------------------------------------------------------------------------
-log "2/8 Helm + repos"
-command -v helm >/dev/null 2>&1 || curl -fsSL https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | bash
+# --- 2. Helm (pinned + checksum-verified; never pipe a remote installer to a shell) -----------------
+log "2/8 Helm $HELM_VERSION + repos"
+if ! command -v helm >/dev/null 2>&1; then
+  helm_tmp="$(mktemp -d)"
+  curl -fsSL -o "$helm_tmp/helm.tar.gz" "https://get.helm.sh/helm-${HELM_VERSION}-linux-amd64.tar.gz"
+  # sha256sum -c exits non-zero on mismatch; set -e then aborts before we run an unverified binary.
+  echo "${HELM_SHA256_AMD64}  $helm_tmp/helm.tar.gz" | sha256sum -c -
+  tar -xzf "$helm_tmp/helm.tar.gz" -C "$helm_tmp"
+  sudo install -m 0755 "$helm_tmp/linux-amd64/helm" /usr/local/bin/helm
+  rm -rf "$helm_tmp"
+fi
 helm repo add cilium https://helm.cilium.io/ >/dev/null 2>&1 || true
 helm repo add nvidia https://helm.ngc.nvidia.com/nvidia >/dev/null 2>&1 || true
 helm repo update >/dev/null

@@ -40,12 +40,18 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
       - name: Emit digest to job summary
+        # Pass the tag-derived version and build digest through env, never
+        # interpolated into the shell: ${{ }} substitution happens before the
+        # script runs, so a crafted tag name would otherwise inject commands.
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+          DIGEST: ${{ steps.build.outputs.digest }}
         run: |
           {
-            echo "## bruk-operator ${{ steps.version.outputs.version }}"
+            echo "## bruk-operator ${VERSION}"
             echo ""
-            echo "Image: \`ghcr.io/antongust/bruk-operator:${{ steps.version.outputs.version }}\`"
-            echo "Digest: \`${{ steps.build.outputs.digest }}\`"
+            echo "Image: \`ghcr.io/antongust/bruk-operator:${VERSION}\`"
+            echo "Digest: \`${DIGEST}\`"
             echo ""
             echo "Pin in install/helm-values/airon-operator.yaml as:"
             echo '```yaml'
@@ -53,6 +59,6 @@ jobs:
             echo "  container:"
             echo "    image:"
             echo "      repository: ghcr.io/antongust/bruk-operator"
-            echo "      tag: \"${{ steps.version.outputs.version }}@${{ steps.build.outputs.digest }}\""
+            echo "      tag: \"${VERSION}@${DIGEST}\""
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"

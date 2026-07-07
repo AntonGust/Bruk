@@ -18,6 +18,10 @@ _Avoid_: estate, fleet of fleets
 The cross-cluster control layer that provisions, attests, and orchestrates many single-tenant clusters. Distinct from the per-cluster control plane the spec PDF describes. (New concept — not in the original PDF.)
 _Avoid_: meta-cluster, global control plane
 
+**Fleet-plane host**:
+A machine that runs one or more fleet-plane services (provisioning/MAAS, the tenant/key registry, the host-attestation verifier, later the KBS) — the fleet plane may span several such machines. Explicitly not a **Node** — it belongs to no cluster and serves no tenant.
+_Avoid_: fleet-plane node (collides with **Node**), MAAS server (names one service on it, not the role)
+
 **Tenant**:
 The single customer (or Airon itself) that owns one cluster. There are no multi-tenant primitives *inside* a cluster; multi-customer concerns live only on the fleet plane.
 _Avoid_: account, client, user

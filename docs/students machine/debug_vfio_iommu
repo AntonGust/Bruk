@@ -1,0 +1,44 @@
+OLD: 
+ubuntu@4-fe:~/bruk$ lsmod | grep vfio
+vfio_pci               20480  2
+vfio_pci_core          94208  1 vfio_pci
+irqbypass              16384  2 vfio_pci_core,kvm
+vfio_iommu_type1       49152  0
+vfio                   73728  8 vfio_pci_core,vfio_iommu_type1,vfio_pci
+iommufd               126976  3 vfio
+ubuntu@4-fe:~/bruk$ lsmod | grep iommu
+vfio_iommu_type1       49152  0
+vfio                   73728  8 vfio_pci_core,vfio_iommu_type1,vfio_pci
+iommufd               126976  3 vfio
+ubuntu@4-fe:~/bruk$ lspci -nnk -d 10de:
+41:00.0 3D controller [0302]: NVIDIA Corporation Device [10de:2bb5] (rev a1)
+        Subsystem: NVIDIA Corporation Device [10de:204e]
+        Kernel driver in use: vfio-pci
+        Kernel modules: nvidiafb, nouveau
+81:00.0 3D controller [0302]: NVIDIA Corporation Device [10de:2bb5] (rev a1)
+        Subsystem: NVIDIA Corporation Device [10de:204e]
+        Kernel driver in use: vfio-pci
+        Kernel modules: nvidiafb, nouveau
+
+NEW:
+lsmod | grep vfio
+vfio_pci               20480  0
+vfio_pci_core          94208  1 vfio_pci
+irqbypass              16384  2 vfio_pci_core,kvm
+vfio_iommu_type1       49152  0
+vfio                   73728  4 vfio_pci_core,vfio_iommu_type1,vfio_pci
+iommufd               126976  1 vfio
+ubuntu@bruk-fe4:~/Bruk-FE4$ lsmod | grep iommu
+vfio_iommu_type1       49152  0
+vfio                   73728  4 vfio_pci_core,vfio_iommu_type1,vfio_pci
+iommufd               126976  1 vfio
+ubuntu@bruk-fe4:~/Bruk-FE4$ lspci -nnk -d 10de:
+21:00.0 3D controller [0302]: NVIDIA Corporation GH100 [H100L 94GB] [10de:2321] (rev a1)
+        Subsystem: NVIDIA Corporation GH100 [H100L 94GB] [10de:1839]
+        Kernel driver in use: vfio-pci
+        Kernel modules: nvidiafb, nouveau
+81:00.0 3D controller [0302]: NVIDIA Corporation GH100 [H100L 94GB] [10de:2321] (rev a1)
+        Subsystem: NVIDIA Corporation GH100 [H100L 94GB] [10de:1839]
+        Kernel driver in use: vfio-pci
+        Kernel modules: nvidiafb, nouveau
+ubuntu@bruk-fe4:~/Bruk-FE4$ 

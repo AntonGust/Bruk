@@ -37,8 +37,12 @@ Milestone 1 — the thinnest end-to-end inference path on a single node: client 
 _Avoid_: MVP, prototype
 
 **OpenAI-compatible contract**:
-The client-facing API surface (`/v1/chat/completions` etc.). **Envoy owns this contract**, so the upstream (vLLM directly, or via Dynamo) is invisible to clients.
+The client-facing API surface (`/v1/chat/completions` etc.). The **Gateway** owns this contract, so the upstream (vLLM directly, or via Dynamo) is invisible to clients.
 _Avoid_: the API, the endpoint (when precision is needed)
+
+**Gateway**:
+A cluster's single public entry point — an operator-rendered Envoy in front of the InferenceServices that terminates TLS, authenticates the Tenant's API keys, serves the model catalog, and routes each request to an InferenceService by model name. One per cluster; owns the **OpenAI-compatible contract** (ADR-0010).
+_Avoid_: ingress, edge proxy, public endpoint (names the URL, not the component)
 
 **Attestation gate**:
 The rule and its enforcing artifact: a node receives no secrets (keys, weights, credentials) until it passes **host attestation**. Lands in parallel with the serving skeleton.

@@ -53,7 +53,7 @@ No CC on/off field (node-level property; the runtimeClass is a hardcoded constan
 toggle is the 19-minute-outage trap). No BYO customer images. No KBS/Trustee fields (ADR-0006
 roadmap). No multi-GPU/replicas/autoscaling (SPT is the only validated CC topology until HGX
 B300). No extraArgs/podSpec passthrough (ADR-0002's audited deterministic surface). No public
-endpoint/auth fields (Envoy phase).
+endpoint/auth fields (Envoy phase — since designed; superseded in part by ADR-0010).
 
 ## Consequences
 
